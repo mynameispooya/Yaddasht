@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>یادداشت‌های من</title>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
+        
+        :root {
+            --bg-color: #0e1117;
+            --sidebar-bg: #161b22;
+            --card-bg: #1e1e2f;
+            --card-hover: #252540;
+            --border-color: #2d2d44;
+            --primary-color: #6c5ce7;
+            --danger-color: #d63031;
+            --success-color: #00b894;
+            --text-color: #fafafa;
+            --muted-color: #a0a0b0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'B Nazanin', 'Vazirmatn', 'Tahoma', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 350px;
+            background-color: var(--sidebar-bg);
+            border-left: 1px solid var(--border-color);
+            padding: 20px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .sidebar h2 {
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            color: var(--muted-color);
+        }
+
+        input[type="text"], textarea, input[type="time"], select {
+            width: 100%;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 10px;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            border-color: var(--primary-color);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .file-upload {
+            border: 2px dashed var(--border-color);
+            padding: 15px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        .file-upload:hover {
+            border-color: var(--primary-color);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            font-size: 16px;
+        }
+
+        .btn-primary:hover {
+            background-color: #5a4bd1;
+        }
+
+        .date-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+
+        /* Main Content Styles */
+        .main-content {
+            flex-grow: 1;
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .main-content h1 {
+            margin-bottom: 20px;
+        }
+
+        .notes-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .note-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .note-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary-color);
+        }
+
+        .note-card.done {
+            opacity: 0.6;
+        }
+
+        .note-card.done .note-title, .note-card.done .note-desc {
+            text-decoration: line-through;
+        }
+
+        .note-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+
+        .note-desc {
+            font-size: 16px;
+            margin-bottom: 10px;
+            flex-grow: 1;
+            line-height: 1.5;
+        }
+
+        .note-images {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            overflow-x: auto;
+        }
+
+        .note-images img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .note-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 10px;
+        }
+
+        .note-date {
+            font-size: 12px;
+            color: var(--muted-color);
+        }
+
+        .reminder-badge {
+            font-size: 12px;
+            background-color: rgba(214, 48, 49, 0.2);
+            color: var(--danger-color);
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+            display: inline-block;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 5px;
+            transition: background-color 0.2s;
+        }
+
+        .btn-icon:hover {
+            background-color: var(--card-hover);
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--muted-color);
+            margin-top: 50px;
+        }
+
+        /* Toast Notification (For Reminders) */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            background-color: var(--danger-color);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            animation: slideIn 0.5s ease, fadeOut 0.5s ease 4.5s forwards;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateX(-20px); }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-color); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary-color); }
+
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>یادداشت جدید</h2>
+        <form id="noteForm">
+            <div class="form-group">
+                <label for="title">عنوان</label>
+                <input type="text" id="title" placeholder="مثال: جلسه مهم" required>
+            </div>
+            <div class="form-group">
+                <label for="desc">توضیحات</label>
+                <textarea id="desc" placeholder="جزئیات را وارد کنید..."></textarea>
+            </div>
+            <div class="form-group">
+                <label for="images">افزودن عکس</label>
+                <div class="file-upload">
+                    <input type="file" id="images" accept="image/*" multiple style="display:none;">
+                    <span>انتخاب فایل‌ها...</span>
+                </div>
+                <div id="fileList" style="font-size: 12px; margin-top: 5px; color: var(--muted-color);"></div>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="reminderToggle">
+                    <label for="reminderToggle" style="margin: 0; cursor: pointer;">فعال‌سازی یادآوری</label>
+                </div>
+                <div id="reminderConfig" style="display: none; margin-top: 10px;">
+                    <div class="date-grid">
+                        <select id="year"></select>
+                        <select id="month"></select>
+                        <select id="day"></select>
+                    </div>
+                    <input type="time" id="time" style="margin-top: 10px;" value="12:00">
+                </div>
+            </div>
+
+            <button type="submit" class="btn-primary">ذخیره یادداشت</button>
+        </form>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <h1>📚 یادداشت‌های من</h1>
+        <div id="notesContainer" class="notes-container">
+            <!-- Notes will be injected here -->
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // --- Shamsi (Jalali) Date Conversion Logic ---
+        function div(a, b) { return Math.floor(a / b); }
+        function gregorianToJalali(gy, gm, gd) {
+            let g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+            let jy = (gy <= 1600) ? 0 : 979;
+            gy -= (gy <= 1600) ? 621 : 1600;
+            let gy2 = (gm > 2) ? (gy + 1) : gy;
+            let days = (365 * gy) + (div((gy2 + 3), 4)) - (div((gy2 + 99), 100)) + (div((gy2 + 399), 400)) - 80 + gd + g_d_m[gm - 1];
+            jy += 33 * (div(days, 12053));
+            days %= 12053;
+            jy += 4 * (div(days, 1461));
+            days %= 1461;
+            if (days > 365) {
+                jy += div((days - 1), 365);
+                days = (days - 1) % 365;
+            }
+            let jm = (days < 186) ? div(days, 31) : div((days - 186), 30) + 7;
+            let jd = 1 + ((days < 186) ? (days % 31) : ((days - 186) % 30));
+            return [jy, jm, jd];
+        }
+        function jalaliToGregorian(jy, jm, jd) {
+            let gy = (jy <= 979) ? 621 : 1600;
+            jy -= (jy <= 979) ? 0 : 979;
+            let days = (365 * jy) + (div(jy, 33) * 8) + div((jy % 33 + 3), 4) + 78 + jd + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
+            gy += 400 * (div(days, 146097));
+            days %= 146097;
+            if (days > 36524) {
+                gy += 100 * (div(--days, 36524));
+                days %= 36524;
+                if (days >= 365) days++;
+            }
+            gy += 4 * (div(days, 1461));
+            days %= 1461;
+            if (days > 365) {
+                gy += div((days - 1), 365);
+                days = (days - 1) % 365;
+            }
+            let gd = days + 1;
+            let sal_a = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // Gregorian months
+            let gm = 0;
+            for (gm = 0; gm < 13; gm++) {
+                let v = sal_a[gm];
+                if (gd <= v) break;
+                gd -= v;
+            }
+            return [gy, gm, gd];
+        }
+
+        // --- IndexedDB Setup ---
+        const DB_NAME = "NotesDB";
+        let db;
+
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                let request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = function(event) {
+                    let db = event.target.result;
+                    if (!db.objectStoreNames.contains("notes")) {
+                        db.createObjectStore("notes", { keyPath: "id", autoIncrement: true });
+                    }
+                };
+                request.onsuccess = function(event) {
+                    db = event.target.result;
+                    resolve(db);
+                };
+                request.onerror = function(event) { reject("DB Error"); };
+            });
+        }
+
+        async function addNoteToDB(note) {
+            return new Promise((resolve, reject) => {
+                let tx = db.transaction("notes", "readwrite");
+                let store = tx.objectStore("notes");
+                let req = store.add(note);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function getAllNotes() {
+            return new Promise((resolve, reject) => {
+                let tx = db.transaction("notes", "readonly");
+                let store = tx.objectStore("notes");
+                let req = store.getAll();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function updateNoteInDB(note) {
+            return new Promise((resolve, reject) => {
+                let tx = db.transaction("notes", "readwrite");
+                let store = tx.objectStore("notes");
+                let req = store.put(note);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function deleteNoteFromDB(id) {
+            return new Promise((resolve, reject) => {
+                let tx = db.transaction("notes", "readwrite");
+                let store = tx.objectStore("notes");
+                let req = store.delete(id);
+                req.onsuccess = () => resolve();
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        // --- UI & Logic ---
+        const months = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+        let selectedFiles = [];
+
+        function populateDatePicker() {
+            const today = new Date();
+            const [jy, jm, jd] = gregorianToJalali(today.getFullYear(), today.getMonth() + 1, today.getDate());
+
+            const yearSelect = document.getElementById('year');
+            const monthSelect = document.getElementById('month');
+            const daySelect = document.getElementById('day');
+
+            yearSelect.innerHTML = '';
+            for(let y = jy - 5; y <= jy + 10; y++) {
+                let opt = new Option(y, y);
+                if(y === jy) opt.selected = true;
+                yearSelect.add(opt);
+            }
+
+            monthSelect.innerHTML = '';
+            months.forEach((m, i) => {
+                let opt = new Option(m, i + 1);
+                if(i + 1 === jm) opt.selected = true;
+                monthSelect.add(opt);
+            });
+
+            updateDays();
+        }
+
+        function updateDays() {
+            const monthVal = parseInt(document.getElementById('month').value);
+            const yearVal = parseInt(document.getElementById('year').value);
+            const daySelect = document.getElementById('day');
+            const selectedDay = parseInt(daySelect.value) || 1;
+
+            let daysInMonth = 31;
+            if (monthVal > 6 && monthVal < 12) daysInMonth = 30;
+            if (monthVal === 12) {
+                // Leap year check for Shamsi (simplified)
+                const gY = yearVal + 621;
+                if ((gY % 4 === 0 && gY % 100 !== 0) || (gY % 400 === 0)) daysInMonth = 30;
+                else daysInMonth = 29;
+            }
+
+            daySelect.innerHTML = '';
+            for(let d = 1; d <= daysInMonth; d++) {
+                let opt = new Option(d, d);
+                if(d === selectedDay) opt.selected = true;
+                daySelect.add(opt);
+            }
+        }
+
+        function showToast(message) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `⏰ ${message}`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        async function renderNotes() {
+            const container = document.getElementById('notesContainer');
+            const notes = await getAllNotes();
+            
+            if(notes.length === 0) {
+                container.innerHTML = '<div class="empty-state">هنوز یادداشتی ثبت نشده است.</div>';
+                return;
+            }
+
+            // Sort: Unfinished first, then by date desc
+            notes.sort((a, b) => (a.isDone - b.isDone) || (b.createdAt - a.createdAt));
+
+            container.innerHTML = '';
+            for(const note of notes) {
+                const card = document.createElement('div');
+                card.className = `note-card ${note.isDone ? 'done' : ''}`;
+                
+                let imagesHtml = '';
+                if(note.images && note.images.length > 0) {
+                    imagesHtml = '<div class="note-images">';
+                    note.images.forEach(blob => {
+                        const url = URL.createObjectURL(blob);
+                        imagesHtml += `<img src="${url}" alt="Note Image">`;
+                    });
+                    imagesHtml += '</div>';
+                }
+
+                let reminderHtml = '';
+                if(note.reminderTime) {
+                    const d = new Date(note.reminderTime);
+                    const [jy, jm, jd] = gregorianToJalali(d.getFullYear(), d.getMonth()+1, d.getDate());
+                    const timeStr = d.toTimeString().substring(0, 5);
+                    reminderHtml = `<span class="reminder-badge">یادآوری: ${jy}/${jm}/${jd} - ${timeStr}</span>`;
+                }
+
+                const date = new Date(note.createdAt);
+                const [jy, jm, jd] = gregorianToJalali(date.getFullYear(), date.getMonth()+1, date.getDate());
+
+                card.innerHTML = `
+                    <div class="note-title">${note.title}</div>
+                    <div class="note-desc">${note.description || ''}</div>
+                    ${imagesHtml}
+                    ${reminderHtml}
+                    <div class="note-footer">
+                        <span class="note-date">ساخته شده: ${jy}/${jm}/${jd}</span>
+                        <div class="actions">
+                            <button class="btn-icon" onclick="toggleDone(${note.id})" title="انجام شد">
+                                ${note.isDone ? '↩️' : '✅'}
+                            </button>
+                            <button class="btn-icon" onclick="deleteNote(${note.id})" title="حذف">🗑️</button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+        }
+
+        async function toggleDone(id) {
+            const notes = await getAllNotes();
+            const note = notes.find(n => n.id === id);
+            if(note) {
+                note.isDone = !note.isDone;
+                await updateNoteInDB(note);
+                renderNotes();
+            }
+        }
+
+        async function deleteNote(id) {
+            await deleteNoteFromDB(id);
+            renderNotes();
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('reminderToggle').addEventListener('change', function(e) {
+            document.getElementById('reminderConfig').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        document.getElementById('month').addEventListener('change', updateDays);
+        document.getElementById('year').addEventListener('change', updateDays);
+
+        document.getElementById('images').addEventListener('change', function(e) {
+            selectedFiles = Array.from(e.target.files);
+            document.getElementById('fileList').innerText = selectedFiles.length > 0 ? `${selectedFiles.length} فایل انتخاب شد` : '';
+        });
+
+        document.getElementById('noteForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const title = document.getElementById('title').value;
+            const desc = document.getElementById('desc').value;
+            
+            let reminderTime = null;
+            if(document.getElementById('reminderToggle').checked) {
+                const y = parseInt(document.getElementById('year').value);
+                const m = parseInt(document.getElementById('month').value);
+                const d = parseInt(document.getElementById('day').value);
+                const [gy, gm, gd] = jalaliToGregorian(y, m, d);
+                const timeStr = document.getElementById('time').value;
+                reminderTime = new Date(`${gy}-${String(gm).padStart(2,'0')}-${String(gd).padStart(2,'0')}T${timeStr}`).getTime();
+            }
+
+            const note = {
+                title,
+                description: desc,
+                images: selectedFiles,
+                isDone: false,
+                reminderTime: reminderTime,
+                reminderShown: false, // To prevent showing toast multiple times
+                createdAt: Date.now()
+            };
+
+            await addNoteToDB(note);
+            this.reset();
+            document.getElementById('fileList').innerText = '';
+            selectedFiles = [];
+            document.getElementById('reminderConfig').style.display = 'none';
+            renderNotes();
+        });
+
+        // --- Reminder Checker Loop ---
+        setInterval(async () => {
+            const notes = await getAllNotes();
+            const now = Date.now();
+            let needsRender = false;
+
+            for(const note of notes) {
+                if(note.reminderTime && !note.isDone && !note.reminderShown) {
+                    if(note.reminderTime <= now) {
+                        showToast(`یادآوری: ${note.title}`);
+                        note.reminderShown = true;
+                        await updateNoteInDB(note);
+                    }
+                }
+            }
+        }, 10000); // Check every 10 seconds
+
+        // --- Initialization ---
+        window.onload = async function() {
+            await initDB();
+            populateDatePicker();
+            renderNotes();
+        };
+    </script>
+</body>
+</html>
