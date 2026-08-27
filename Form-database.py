@@ -15,25 +15,34 @@ def get_db_connection():
 
 
 def init_db():
-    """ایجاد جدول دیتابیس در صورت عدم وجود"""
+    """ایجاد یا بازسازی جدول دیتابیس با ساختار جدید"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute(
+
+    # بررسی وجود ستون form_id در جدول موجود
+    cursor.execute("PRAGMA table_info(responses)")
+    columns = [col[1] for col in cursor.fetchall()]
+
+    # اگر جدول وجود نداشت یا ستون form_id در آن نبود، جدول را از نو می‌سازیم
+    if not columns or "form_id" not in columns:
+        cursor.execute("DROP TABLE IF EXISTS responses")
+        cursor.execute(
+            """
+            CREATE TABLE responses (
+                form_id TEXT PRIMARY KEY,
+                gender TEXT,
+                age TEXT,
+                work_experience TEXT,
+                current_service_experience TEXT,
+                education TEXT,
+                organizational_post TEXT,
+                raw_data TEXT,
+                source_type TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         """
-        CREATE TABLE IF NOT EXISTS responses (
-            form_id TEXT PRIMARY KEY,
-            gender TEXT,
-            age TEXT,
-            work_experience TEXT,
-            current_service_experience TEXT,
-            education TEXT,
-            organizational_post TEXT,
-            raw_data TEXT,
-            source_type TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """
-    )
+
     conn.commit()
     conn.close()
 
@@ -63,6 +72,7 @@ def flatten_json_form(form_data):
     }
 
 
+# مقداردهی اولیه و اطمینان از ساختار درست جدول
 init_db()
 
 st.title("📊 سیستم مدیریت و به‌روزرسانی پرسشنامه‌ها")
@@ -81,7 +91,6 @@ uploaded_excel = st.file_uploader(
 
 if uploaded_excel is not None:
     try:
-        # خواندن اکسل و یکدست‌سازی انواع داده‌ها جهت جلوگیری از خطای PyArrow
         df_excel = pd.read_excel(uploaded_excel)
         df_excel = df_excel.astype(str).replace("nan", None)
 
@@ -94,9 +103,12 @@ if uploaded_excel is not None:
             inserted_count = 0
 
             for _, row in df_excel.iterrows():
-                # ستون شناسه فرم (مثلا G1, G20)
+                # شناسه فرم بر اساس ستون‌های مرسوم
                 form_id = str(
-                    row.get("نام تکمیل کننده", row.get("form_id", ""))
+                    row.get(
+                        "نام تکمیل کننده",
+                        row.get("form_id", row.get("نام تکمیل‌کننده", "")),
+                    )
                 ).strip()
 
                 if form_id and form_id != "None":
@@ -145,6 +157,7 @@ if uploaded_excel is not None:
             st.success(
                 f"تعداد {inserted_count} ردیف با موفقیت از اکسل وارد دیتابیس شد."
             )
+            st.rerun()
 
     except Exception as e:
         st.error(f"خطا در پردازش فایل اکسل: {e}")
@@ -152,7 +165,7 @@ if uploaded_excel is not None:
 st.divider()
 
 # ==========================================
-# ورودی ۲: آپدیت و به‌روزرسانی از طریق JSON
+# ورودی ۲: آپدیت و جایگزینی داده‌ها (JSON)
 # ==========================================
 st.subheader("۲. آپدیت و جایگزینی داده‌ها (JSON)")
 st.caption(
@@ -226,6 +239,7 @@ if uploaded_json is not None:
                 st.success(
                     f"تعداد {updated_count} فرم بر اساس فایل JSON در دیتابیس به‌روزرسانی/جایگزین گردید."
                 )
+                st.rerun()
 
     except Exception as e:
         st.error(f"خطا در پردازش فایل JSON: {e}")
@@ -238,16 +252,19 @@ st.divider()
 st.subheader("🗄️ محتوای فعلی دیتابیس")
 
 conn = get_db_connection()
-db_df = pd.read_sql_query(
-    "SELECT form_id, gender, age, work_experience, current_service_experience, education, organizational_post, source_type, updated_at FROM responses",
-    conn,
-)
-conn.close()
-
-if not db_df.empty:
-    st.write(f"تعداد کل رکوردهای موجود در دیتابیس: {len(db_df)}")
-    st.dataframe(db_df)
-else:
-    st.info(
-        "دیتابیس در حال حاضر خالی است. ابتدا فایل اکسل اولیه را بارگذاری کنید."
+try:
+    db_df = pd.read_sql_query(
+        "SELECT form_id, gender, age, work_experience, current_service_experience, education, organizational_post, source_type, updated_at FROM responses",
+        conn,
     )
+    if not db_df.empty:
+        st.write(f"تعداد کل رکوردهای موجود در دیتابیس: {len(db_df)}")
+        st.dataframe(db_df)
+    else:
+        st.info(
+            "دیتابیس در حال حاضر خالی است. ابتدا فایل اکسل اولیه را بارگذاری کنید."
+        )
+except Exception as e:
+    st.error(f"خطا در خواندن دیتابیس: {e}")
+finally:
+    conn.close()
