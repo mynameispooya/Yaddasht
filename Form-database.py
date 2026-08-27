@@ -17,7 +17,6 @@ DB_FILE = "questionnaires.db"
 def get_db_connection():
     """ایجاد اتصال به دیتابیس"""
     conn = sqlite3.connect(DB_FILE)
-    # این تنظیم باعث می‌شود خروجی‌ها به صورت دیکشنری باشند نه Tuple
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -27,14 +26,12 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # بررسی وجود جدول و ستون‌های آن
     try:
         cursor.execute("PRAGMA table_info(responses)")
         columns = [col[1] for col in cursor.fetchall()]
     except Exception:
         columns = []
 
-    # اگر جدول وجود نداشت یا ساختار قدیمی بود، آن را از نو می‌سازیم
     if not columns or "form_id" not in columns or "source_type" not in columns:
         st.warning("در حال ساخت یا بازسازی ساختار دیتابیس...")
         cursor.execute("DROP TABLE IF EXISTS responses")
@@ -49,7 +46,7 @@ def init_db():
                 education TEXT,
                 organizational_post TEXT,
                 raw_data TEXT,
-                source_type TEXT, -- 'EXCEL' یا 'JSON'
+                source_type TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """
@@ -66,7 +63,6 @@ def flatten_json_form(form_data):
     pages = form_data.get("pages", {})
 
     demographics = {}
-    # پیدا کردن اطلاعات دموگرافیک از صفحات
     for page_key, page_val in pages.items():
         if isinstance(page_val, dict) and "demographics" in page_val:
             demographics = page_val["demographics"]
@@ -87,18 +83,15 @@ def flatten_json_form(form_data):
 def find_column_normalize(df, target_names):
     """
     پیدا کردن نام واقعی ستون در دیتافریم بدون حساسیت به فاصله، نیم‌فاصله یا بزرگ‌کوچکی حروف.
-    target_names: لیستی از نام‌های احتمالی (مثلا ["نام تکمیل کننده", "form_id"])
     """
     import re
 
-    # نرمال‌سازی نام‌های درخواستی: حذف تمام فاصله‌ها، نیم‌فاصله‌ها و تبدیل به حروف کوچک
     norm_targets = [re.sub(r'\s+', '', name).lower() for name in target_names]
 
     for col in df.columns:
-        # نرمال‌سازی نام ستون فعلی اکسل
         norm_col = re.sub(r'\s+', '', str(col)).lower()
         if norm_col in norm_targets:
-            return col  # نام واقعی ستون در اکسل را برگردان
+            return col
     return None
 
 
@@ -106,12 +99,11 @@ def find_column_normalize(df, target_names):
 # شروع برنامه
 # ==========================================
 
-# اطمینان از وجود دیتابیس و ساختار صحیح
 init_db()
 
 st.title("📊 سیستم مدیریت و به‌روزرسانی پرسشنامه‌ها")
 
-# نمایش وضعیت فعلی دیتابیس در بالا برای اطمینان کاربر
+# نمایش وضعیت فعلی دیتابیس در نوار کناری
 conn = get_db_connection()
 try:
     count_res = conn.execute("SELECT count(*) FROM responses").fetchone()
@@ -135,7 +127,7 @@ st.markdown("""
 <strong>دقت کنید:</strong> ستون‌های اصلی در فایل اکسل شما باید نام‌های مشخصی داشته باشند.<br>
 نام ستون اصلی باید چیزی شبیه به <strong>"نام تکمیل کننده"</strong>، <strong>"نام تکمیل‌کننده"</strong> (با نیم‌فاصله) یا <strong>"form_id"</strong> باشد تا سیستم بتواند کدهای G1, G2, ... را شناسایی کند.
 </div>
-""", unsafe_with_html=True)
+""", unsafe_allow_html=True)
 
 uploaded_excel = st.file_uploader(
     "فایل اکسل اولیه را آپلود کنید", type=["xlsx", "xls"], key="excel_uploader"
@@ -143,28 +135,20 @@ uploaded_excel = st.file_uploader(
 
 if uploaded_excel is not None:
     try:
-        # خواندن اکسل
         df_excel = pd.read_excel(uploaded_excel)
-        
-        # نمایش نام ستون‌های واقعی شناسایی شده برای دیباگ کاربر
-        # st.write("ستون‌های شناسایی شده در اکسل شما:", list(df_excel.columns))
 
         st.write("پیش‌نمایش ۵ سطر اول فایل اکسل:")
         st.dataframe(df_excel.head())
 
         if st.button("💾 ثبت اولیه داده‌های اکسل در دیتابیس"):
-            # پیدا کردن ستون کلیدی form_id بدون حساسیت به نام دقیق
             col_form_id = find_column_normalize(df_excel, ["نام تکمیل کننده", "نام تکمیل‌کننده", "form_id", "id", "code"])
             
             if not col_form_id:
                 st.error("❌ خطای اساسی: ستون مربوط به شناسه فرم (مانند 'نام تکمیل کننده' یا 'form_id') در فایل اکسل پیدا نشد. لطفا فایل را بررسی کرده و دوباره آپلود کنید.")
-                # st.write("نام ستون‌های موجود:", list(df_excel.columns))
                 st.stop()
 
-            # تبدیل داده‌ها به رشته و جایگزینی مقادیر خالی
             df_processed = df_excel.astype(str).replace("nan", None)
             
-            # پیدا کردن سایر ستون‌های دموگرافیک به صورت هوشمند
             col_gender = find_column_normalize(df_excel, ["جنسیت", "gender"])
             col_age = find_column_normalize(df_excel, ["سن", "age"])
             col_work_exp = find_column_normalize(df_excel, ["سابقه کار", "work_experience"])
@@ -172,7 +156,6 @@ if uploaded_excel is not None:
             col_edu = find_column_normalize(df_excel, ["مدرک تحصیلات", "تحصیلات", "education"])
             col_post = find_column_normalize(df_excel, ["پست سازمانی", "سمت", "organizational_post"])
 
-            # هشدار در صورت پیدا نشدن ستون‌های غیرضروری
             missing_optional = []
             if not col_gender: missing_optional.append("جنسیت")
             if not col_age: missing_optional.append("سن")
@@ -184,25 +167,20 @@ if uploaded_excel is not None:
             inserted_count = 0
             error_count = 0
 
-            # نوار پیشرفت
             progress_bar = st.progress(0)
             status_text = st.empty()
             total_rows = len(df_processed)
 
             for i, row in df_processed.iterrows():
-                # استخراج شناسه فرم (اصلی‌ترین بخش)
                 form_id_raw = row[col_form_id]
                 
-                # پاک‌سازی شناسه (حذف None، فاصله‌ها)
                 if form_id_raw is None or str(form_id_raw).lower() == 'none':
                     form_id = None
                 else:
                     form_id = str(form_id_raw).strip()
 
-                # فقط اگر شناسه فرم وجود داشت، ذخیره کن
                 if form_id and form_id != "":
                     try:
-                        # استخراج سایر داده‌ها (اگر ستونش پیدا شده بود)
                         gender = row[col_gender] if col_gender else None
                         age = row[col_age] if col_age else None
                         work_exp = row[col_work_exp] if col_work_exp else None
@@ -210,7 +188,6 @@ if uploaded_excel is not None:
                         edu = row[col_edu] if col_edu else None
                         post = row[col_post] if col_post else None
                         
-                        # ذخیره کل ردیف به عنوان داده خام برای پشتیبان
                         raw_data_json = row.to_json(force_unicode=True)
 
                         cursor.execute(
@@ -244,16 +221,13 @@ if uploaded_excel is not None:
                             ),
                         )
                         inserted_count += 1
-                    except sqlite3.Error as sqle:
+                    except sqlite3.Error:
                         error_count += 1
-                        # st.error(f"خطا در درج سطر {i+1} (کد {form_id}): {sqle}")
                 
-                # به‌روزرسانی نوار پیشرفت
                 if (i + 1) % 10 == 0 or (i + 1) == total_rows:
                     progress_bar.progress((i + 1) / total_rows)
                     status_text.text(f"در حال پردازش سطر {i+1} از {total_rows}...")
 
-            # **بسیار مهم: Commit نهایی**
             conn.commit()
             conn.close()
             
@@ -261,14 +235,12 @@ if uploaded_excel is not None:
             status_text.empty()
 
             if inserted_count > 0:
-                st.success(f"✅ عملیات با موفقیت انجام شد.")
+                st.success("✅ عملیات با موفقیت انجام شد.")
                 st.balloons()
-                # نمایش پیام دقیق به کاربر
                 msg = f"تعداد **{inserted_count}** فرم با موفقیت از فایل اکسل استخراج و در دیتابیس ذخیره/جایگزین شد."
                 if error_count > 0:
                     msg += f" (تعداد {error_count} سطر به دلیل خطا ذخیره نشدند)."
                 st.info(msg)
-                # رفرش صفحه برای به‌روزرسانی متریک‌ها
                 st.rerun()
             else:
                 st.error("❌ هیچ داده‌ای در دیتابیس ذخیره نشد. احتمالاً ستون 'نام تکمیل کننده' در تمام سطرهای فایل اکسل شما خالی بوده است.")
@@ -292,24 +264,20 @@ uploaded_json = st.file_uploader(
 
 if uploaded_json is not None:
     try:
-        # خواندن JSON
         raw_json_data = json.load(uploaded_json)
         
-        # تبدیل به لیست اگر تک‌فرمی باشد
         forms_list = (
             raw_json_data
             if isinstance(raw_json_data, list)
             else [raw_json_data]
         )
 
-        # پارس کردن فرم‌ها
         parsed_records = []
         for f in forms_list:
             if isinstance(f, dict) and "form_id" in f:
                 parsed_records.append(flatten_json_form(f))
 
         if parsed_records:
-            # پیش‌نمایش
             preview_json_df = pd.DataFrame(parsed_records).drop(
                 columns=["raw_data"]
             )
@@ -321,7 +289,6 @@ if uploaded_json is not None:
                 cursor = conn.cursor()
                 updated_count = 0
 
-                # نوار پیشرفت
                 json_prog = st.progress(0)
                 total_json = len(parsed_records)
 
@@ -361,7 +328,6 @@ if uploaded_json is not None:
                         )
                         updated_count += 1
                     
-                    # آپدیت پروگرس بار
                     if (i+1) % 5 == 0 or (i+1) == total_json:
                         json_prog.progress((i+1)/total_json)
 
@@ -389,7 +355,6 @@ st.subheader("🗄️ محتوای فعلی دیتابیس (نمای کلی)")
 
 conn = get_db_connection()
 try:
-    # خواندن داده‌ها برای نمایش (بدون داده‌های خام سنگین)
     db_df = pd.read_sql_query(
         """
         SELECT 
@@ -411,12 +376,9 @@ try:
         st.write(f"تعداد کل رکوردهای موجود: **{len(db_df)}**")
         st.dataframe(db_df)
         
-        # امکان دانلود کل دیتابیس به صورت اکسل
-        # برای دانلود نیاز به داده خام هم داریم
         if st.checkbox("آماده‌سازی لینک دانلود کل داده‌ها (به همراه داده خام JSON)"):
             df_full = pd.read_sql_query("SELECT * FROM responses", conn)
             
-            # تبدیل به اکسل در حافظه
             from io import BytesIO
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -439,7 +401,7 @@ except Exception as e:
 finally:
     conn.close()
 
-# بخش خطر برای پاکسازی
+# بخش پاکسازی دیتابیس
 with st.expander("🛠️ تنظیمات پیشرفته (منطقه خطر)"):
     st.warning("عملیات زیر غیرقابل بازگشت است.")
     if st.button("💣 پاکسازی کامل دیتابیس"):
