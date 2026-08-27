@@ -1,133 +1,135 @@
 import json
 import sqlite3
+import re
+from io import BytesIO
 import pandas as pd
 import streamlit as st
-import os
 
 st.set_page_config(
-    page_title="مدیریت دیتابیس (Excel + JSON)", layout="wide"
+    page_title="مدیریت جامع دیتابیس پرسشنامه‌ها", layout="wide"
 )
 
 DB_FILE = "questionnaires.db"
 
+
 # ==========================================
-# توابع اصلی دیتابیس و پردازش
+# توابع پایه دیتابیس
 # ==========================================
 
 def get_db_connection():
-    """ایجاد اتصال به دیتابیس"""
+    """ارتباط با دیتابیس SQLite"""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_db():
-    """ایجاد یا بازسازی جدول دیتابیس با ساختار درست"""
+def build_column_names_from_excel(df_raw):
+    """
+    استخراج نام‌های استاندارد ستون‌ها بر اساس ساختار ۲ سطری فایل اکسل:
+    - ستون‌های اولیه (نام، جنسیت، سن و ...)
+    - ابعاد پرسشنامه (شغل شما، مسئول مستقیم، همکار، ارتقا، حقوق و مزایا، شرایط کار) + شماره سوال یا 'میانگین'
+    """
+    cols = []
+    current_category = ""
+
+    for col_idx in range(df_raw.shape[1]):
+        row0_val = str(df_raw.iloc[0, col_idx]).strip()
+        row1_val = str(df_raw.iloc[1, col_idx]).strip()
+
+        # اگر ارزش سطر اول موجود باشد، دسته‌بندی جدید یا ستون ثابت است
+        if row0_val != "nan" and row0_val != "":
+            if row1_val == "nan" or row1_val == "":
+                cols.append(row0_val)
+                continue
+            else:
+                current_category = row0_val
+
+        # اگر در سطر دوم شماره سوال یا کلمه 'میانگین' باشد
+        if row1_val != "nan" and row1_val != "":
+            try:
+                q_num = int(float(row1_val))
+                col_name = f"{current_category}_Q{q_num}"
+            except ValueError:
+                col_name = f"{current_category}_{row1_val}"
+            cols.append(col_name)
+        else:
+            cols.append(f"Unmapped_Col_{col_idx}")
+
+    return cols
+
+
+def init_db(columns_list=None):
+    """ایجاد یا بازسازی جدول دیتابیس بر اساس تمام ستون‌های اکسل"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    try:
-        cursor.execute("PRAGMA table_info(responses)")
-        columns = [col[1] for col in cursor.fetchall()]
-    except Exception:
-        columns = []
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='responses'"
+    )
+    table_exists = cursor.fetchone()
 
-    if not columns or "form_id" not in columns or "source_type" not in columns:
-        st.warning("در حال ساخت یا بازسازی ساختار دیتابیس...")
-        cursor.execute("DROP TABLE IF EXISTS responses")
-        cursor.execute(
-            """
-            CREATE TABLE responses (
-                form_id TEXT PRIMARY KEY,
-                gender TEXT,
-                age TEXT,
-                work_experience TEXT,
-                current_service_experience TEXT,
-                education TEXT,
-                organizational_post TEXT,
-                raw_data TEXT,
-                source_type TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    if not table_exists and columns_list:
+        # ساخت دستور SQL
+        col_defs = ["form_id TEXT PRIMARY KEY"]
+        for col in columns_list:
+            # پاکسازی نام ستون‌ها برای SQL
+            safe_col = (
+                col.replace(" ", "_").replace("‌", "_").replace("-", "_")
             )
-        """
-        )
+            if safe_col != "نام_تکمیل_کننده_فرم" and safe_col != "form_id":
+                col_defs.append(f'"{col}" TEXT')
+
+        col_defs.append("raw_data TEXT")
+        col_defs.append("source_type TEXT")
+        col_defs.append("updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+        create_sql = f"CREATE TABLE responses ({', '.join(col_defs)})"
+        cursor.execute(create_sql)
         conn.commit()
-        st.success("ساختار دیتابیس آماده شد.")
 
     conn.close()
 
 
-def flatten_json_form(form_data):
-    """استخراج اطلاعات از فایل JSON استاندارد"""
-    form_id = form_data.get("form_id")
-    pages = form_data.get("pages", {})
-
-    demographics = {}
-    for page_key, page_val in pages.items():
-        if isinstance(page_val, dict) and "demographics" in page_val:
-            demographics = page_val["demographics"]
-            break
-
-    return {
-        "form_id": form_id,
-        "gender": demographics.get("gender"),
-        "age": demographics.get("age"),
-        "work_experience": demographics.get("work_experience"),
-        "current_service_experience": demographics.get("current_service_experience"),
-        "education": demographics.get("education"),
-        "organizational_post": demographics.get("organizational_post"),
-        "raw_data": json.dumps(form_data, ensure_ascii=False),
-    }
-
-
-def find_column_normalize(df, target_names):
-    """
-    پیدا کردن نام واقعی ستون در دیتافریم بدون حساسیت به فاصله، نیم‌فاصله یا بزرگ‌کوچکی حروف.
-    """
-    import re
-
-    norm_targets = [re.sub(r'\s+', '', name).lower() for name in target_names]
-
-    for col in df.columns:
-        norm_col = re.sub(r'\s+', '', str(col)).lower()
-        if norm_col in norm_targets:
-            return col
-    return None
+def clean_str(val):
+    if pd.isna(val) or val is None or str(val).strip().lower() in ["nan", "none"]:
+        return None
+    return str(val).strip()
 
 
 # ==========================================
-# شروع برنامه
+# شروع رابط کاربری
 # ==========================================
 
-init_db()
+st.title("📊 سیستم مدیریت و به‌روزرسانی دیتابیس پرسشنامه‌ها")
 
-st.title("📊 سیستم مدیریت و به‌روزرسانی پرسشنامه‌ها")
-
-# نمایش وضعیت فعلی دیتابیس در نوار کناری
+# بررسی تعداد داده‌های فعلی
 conn = get_db_connection()
-try:
+cursor = conn.cursor()
+cursor.execute(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='responses'"
+)
+table_exists = cursor.fetchone()
+
+current_count = 0
+if table_exists:
     count_res = conn.execute("SELECT count(*) FROM responses").fetchone()
     current_count = count_res[0]
-except Exception:
-    current_count = 0
-finally:
-    conn.close()
+conn.close()
 
-st.sidebar.metric("تعداد فرم‌های ثبت شده در دیتابیس", current_count)
-if current_count == 0:
-    st.sidebar.info("دیتابیس خالی است. لطفا ابتدا فایل اکسل را از بخش ۱ آپلود کنید.")
-
+st.sidebar.metric("تعداد کل فرم‌ها در دیتابیس", current_count)
 
 # ==========================================
-# ورودی ۱: بارگذاری اولیه از طریق Excel
+# بخش ۱: آپلود اولیه اکسل
 # ==========================================
-st.subheader("۱. بارگذاری اولیه داده‌ها (فقط Excel)")
-st.markdown("""
-<div style="background-color:#f0f2f6;padding:10px;border-radius:5px;border-right:5px solid #ff4b4b;margin-bottom:15px;">
-<strong>دقت کنید:</strong> ستون‌های اصلی در فایل اکسل شما باید نام‌های مشخصی داشته باشند.<br>
-نام ستون اصلی باید چیزی شبیه به <strong>"نام تکمیل کننده"</strong>، <strong>"نام تکمیل‌کننده"</strong> (با نیم‌فاصله) یا <strong>"form_id"</strong> باشد تا سیستم بتواند کدهای G1, G2, ... را شناسایی کند.
+st.subheader("۱. بارگذاری اولیه الگوی اکسل و داده‌ها")
+st.markdown(
+    """
+<div style="background-color:#f0f2f6;padding:12px;border-radius:6px;border-right:5px solid #0066cc;margin-bottom:15px;">
+<strong>راهنما:</strong> فایل اکسل اولیه ساختار جدول دیتابیس را شکل می‌دهد. شناسه اصلی فرم‌ها از ستون <strong>"نام تکمیل کننده فرم"</strong> (مانند G1, G2, ...) خوانده می‌شود.
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 uploaded_excel = st.file_uploader(
     "فایل اکسل اولیه را آپلود کنید", type=["xlsx", "xls"], key="excel_uploader"
@@ -135,279 +137,245 @@ uploaded_excel = st.file_uploader(
 
 if uploaded_excel is not None:
     try:
-        df_excel = pd.read_excel(uploaded_excel)
+        df_raw = pd.read_excel(uploaded_excel, header=None)
+        cols = build_column_names_from_excel(df_raw)
 
-        st.write("پیش‌نمایش ۵ سطر اول فایل اکسل:")
-        st.dataframe(df_excel.head())
+        # دیتای واقعی از سطر ۲ به بعد آغاز می‌شود
+        df_data = df_raw.iloc[2:].copy()
+        df_data.columns = cols
 
-        if st.button("💾 ثبت اولیه داده‌های اکسل در دیتابیس"):
-            col_form_id = find_column_normalize(df_excel, ["نام تکمیل کننده", "نام تکمیل‌کننده", "form_id", "id", "code"])
-            
-            if not col_form_id:
-                st.error("❌ خطای اساسی: ستون مربوط به شناسه فرم (مانند 'نام تکمیل کننده' یا 'form_id') در فایل اکسل پیدا نشد. لطفا فایل را بررسی کرده و دوباره آپلود کنید.")
-                st.stop()
+        # پیدا کردن ستون کلیدی form_id
+        form_id_col = None
+        for c in df_data.columns:
+            if "تکمیل کننده" in c or c.lower() == "form_id":
+                form_id_col = c
+                break
 
-            df_processed = df_excel.astype(str).replace("nan", None)
-            
-            col_gender = find_column_normalize(df_excel, ["جنسیت", "gender"])
-            col_age = find_column_normalize(df_excel, ["سن", "age"])
-            col_work_exp = find_column_normalize(df_excel, ["سابقه کار", "work_experience"])
-            col_serv_exp = find_column_normalize(df_excel, ["سابقه در محل خدمت", "current_service_experience"])
-            col_edu = find_column_normalize(df_excel, ["مدرک تحصیلات", "تحصیلات", "education"])
-            col_post = find_column_normalize(df_excel, ["پست سازمانی", "سمت", "organizational_post"])
+        if not form_id_col:
+            form_id_col = df_data.columns[0]
 
-            missing_optional = []
-            if not col_gender: missing_optional.append("جنسیت")
-            if not col_age: missing_optional.append("سن")
-            if missing_optional:
-                st.warning(f"⚠️ ستون‌های اختیاری مقابل در اکسل پیدا نشدند و خالی رد می‌شوند: {', '.join(missing_optional)}")
+        st.write(f"نمایش پیش‌نمایش ({len(df_data)} سطر و {len(cols)} ستون):")
+        st.dataframe(df_data.head())
+
+        if st.button("💾 ایجاد ساختار دیتابیس و ثبت داده‌های اکسل"):
+            init_db(cols)
 
             conn = get_db_connection()
             cursor = conn.cursor()
+
+            # استخراج اسامی ستون‌های فعلی دیتابیس
+            cursor.execute("PRAGMA table_info(responses)")
+            db_cols = [row[1] for row in cursor.fetchall()]
+
             inserted_count = 0
-            error_count = 0
+            for idx, row in df_data.iterrows():
+                fid = clean_str(row[form_id_col])
+                if not fid:
+                    continue
 
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            total_rows = len(df_processed)
+                row_dict = {}
+                for col in cols:
+                    if col in db_cols:
+                        row_dict[col] = clean_str(row[col])
 
-            for i, row in df_processed.iterrows():
-                form_id_raw = row[col_form_id]
-                
-                if form_id_raw is None or str(form_id_raw).lower() == 'none':
-                    form_id = None
-                else:
-                    form_id = str(form_id_raw).strip()
+                row_dict["raw_data"] = json.dumps(
+                    row.to_dict(), ensure_ascii=False
+                )
+                row_dict["source_type"] = "EXCEL"
 
-                if form_id and form_id != "":
-                    try:
-                        gender = row[col_gender] if col_gender else None
-                        age = row[col_age] if col_age else None
-                        work_exp = row[col_work_exp] if col_work_exp else None
-                        serv_exp = row[col_serv_exp] if col_serv_exp else None
-                        edu = row[col_edu] if col_edu else None
-                        post = row[col_post] if col_post else None
-                        
-                        raw_data_json = row.to_json(force_unicode=True)
+                # درج/آپدیت متناظر در SQL
+                fields = ["form_id"] + list(row_dict.keys())
+                placeholders = ["?"] * len(fields)
+                values = [fid] + list(row_dict.values())
 
-                        cursor.execute(
-                            """
-                            INSERT INTO responses (
-                                form_id, gender, age, work_experience,
-                                current_service_experience, education, organizational_post,
-                                raw_data, source_type
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EXCEL')
-                            ON CONFLICT(form_id) DO UPDATE SET
-                                gender = excluded.gender,
-                                age = excluded.age,
-                                work_experience = excluded.work_experience,
-                                current_service_experience = excluded.current_service_experience,
-                                education = excluded.education,
-                                organizational_post = excluded.organizational_post,
-                                raw_data = excluded.raw_data,
-                                source_type = 'EXCEL',
-                                updated_at = CURRENT_TIMESTAMP
-                        """,
-                            (
-                                form_id,
-                                gender,
-                                age,
-                                work_exp,
-                                serv_exp,
-                                edu,
-                                post,
-                                raw_data_json,
-                            ),
-                        )
-                        inserted_count += 1
-                    except sqlite3.Error:
-                        error_count += 1
-                
-                if (i + 1) % 10 == 0 or (i + 1) == total_rows:
-                    progress_bar.progress((i + 1) / total_rows)
-                    status_text.text(f"در حال پردازش سطر {i+1} از {total_rows}...")
+                update_clause = ", ".join(
+                    [
+                        f'"{k}"=excluded."{k}"'
+                        for k in row_dict.keys()
+                    ]
+                )
+
+                sql = f"""
+                    INSERT INTO responses ({", ".join([f'"{f}"' for f in fields])})
+                    VALUES ({", ".join(placeholders)})
+                    ON CONFLICT(form_id) DO UPDATE SET
+                    {update_clause},
+                    updated_at = CURRENT_TIMESTAMP
+                """
+                cursor.execute(sql, values)
+                inserted_count += 1
 
             conn.commit()
             conn.close()
-            
-            progress_bar.empty()
-            status_text.empty()
 
-            if inserted_count > 0:
-                st.success("✅ عملیات با موفقیت انجام شد.")
-                st.balloons()
-                msg = f"تعداد **{inserted_count}** فرم با موفقیت از فایل اکسل استخراج و در دیتابیس ذخیره/جایگزین شد."
-                if error_count > 0:
-                    msg += f" (تعداد {error_count} سطر به دلیل خطا ذخیره نشدند)."
-                st.info(msg)
-                st.rerun()
-            else:
-                st.error("❌ هیچ داده‌ای در دیتابیس ذخیره نشد. احتمالاً ستون 'نام تکمیل کننده' در تمام سطرهای فایل اکسل شما خالی بوده است.")
+            st.success(
+                f"✅ تعداد {inserted_count} رکورد با تمام ستون‌های استاندارد در دیتابیس ذخیره شد."
+            )
+            st.rerun()
 
     except Exception as e:
-        st.error(f"❌ یک خطای غیرمنتظره در پردازش فایل اکسل رخ داد: {e}")
+        st.error(f"❌ خطا در پردازش فایل اکسل: {e}")
 
 st.divider()
 
 # ==========================================
-# ورودی ۲: آپدیت و جایگزینی داده‌ها (JSON)
+# بخش ۲: آپدیت هوشمند از طریق JSON
 # ==========================================
-st.subheader("۲. آپدیت و جایگزینی داده‌ها (فقط فایل‌های JSON جدید)")
-st.caption(
-    "از این بخش برای به‌روزرسانی داده‌های موجود یا اضافه کردن فرم‌های جدید از طریق فایل JSON استفاده کنید."
-)
+st.subheader("۲. به‌روزرسانی دیتابیس با فایل JSON")
 
 uploaded_json = st.file_uploader(
     "فایل JSON پرسشنامه را آپلود کنید", type=["json"], key="json_uploader"
 )
 
 if uploaded_json is not None:
-    try:
-        raw_json_data = json.load(uploaded_json)
-        
-        forms_list = (
-            raw_json_data
-            if isinstance(raw_json_data, list)
-            else [raw_json_data]
+    if not table_exists:
+        st.error(
+            "❌ ابتدا باید در بخش ۱ فایل اکسل را آپلود کنید تا دیتابیس ساخته شود."
         )
-
-        parsed_records = []
-        for f in forms_list:
-            if isinstance(f, dict) and "form_id" in f:
-                parsed_records.append(flatten_json_form(f))
-
-        if parsed_records:
-            preview_json_df = pd.DataFrame(parsed_records).drop(
-                columns=["raw_data"]
+    else:
+        try:
+            raw_json_data = json.load(uploaded_json)
+            forms_list = (
+                raw_json_data
+                if isinstance(raw_json_data, list)
+                else [raw_json_data]
             )
-            st.write(f"پیش‌نمایش {len(parsed_records)} فرم شناسایی شده در JSON:")
-            st.dataframe(preview_json_df.head())
 
-            if st.button("🔄 به‌روزرسانی دیتابیس با فایل JSON"):
+            if st.button("🔄 به‌روزرسانی داده‌ها بر اساس JSON"):
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                updated_count = 0
 
-                json_prog = st.progress(0)
-                total_json = len(parsed_records)
+                cursor.execute("PRAGMA table_info(responses)")
+                db_cols = [row[1] for row in cursor.fetchall()]
 
-                for i, rec in enumerate(parsed_records):
-                    form_id = str(rec["form_id"]).strip() if rec["form_id"] else None
-                    
-                    if form_id:
-                        cursor.execute(
-                            """
-                            INSERT INTO responses (
-                                form_id, gender, age, work_experience,
-                                current_service_experience, education, organizational_post,
-                                raw_data, source_type
-                            )
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'JSON')
-                            ON CONFLICT(form_id) DO UPDATE SET
-                                gender = excluded.gender,
-                                age = excluded.age,
-                                work_experience = excluded.work_experience,
-                                current_service_experience = excluded.current_service_experience,
-                                education = excluded.education,
-                                organizational_post = excluded.organizational_post,
-                                raw_data = excluded.raw_data,
-                                source_type = 'JSON',
-                                updated_at = CURRENT_TIMESTAMP
-                        """,
-                            (
-                                form_id,
-                                rec["gender"],
-                                rec["age"],
-                                rec["work_experience"],
-                                rec["current_service_experience"],
-                                rec["education"],
-                                rec["organizational_post"],
-                                rec["raw_data"],
-                            ),
-                        )
-                        updated_count += 1
-                    
-                    if (i+1) % 5 == 0 or (i+1) == total_json:
-                        json_prog.progress((i+1)/total_json)
+                updated_cnt = 0
+                for item in forms_list:
+                    fid = item.get("form_id") or item.get(
+                        "نام تکمیل کننده فرم"
+                    )
+                    if not fid:
+                        continue
+
+                    fid = str(fid).strip()
+                    update_payload = {}
+
+                    # نگاشت داده‌های JSON به ستون‌های دیتابیس
+                    for col in db_cols:
+                        if col in [
+                            "form_id",
+                            "raw_data",
+                            "source_type",
+                            "updated_at",
+                        ]:
+                            continue
+
+                        # جستجو در کل ساختار JSON
+                        if col in item:
+                            update_payload[col] = clean_str(item[col])
+                        elif "pages" in item:
+                            # جستجو در صفحات JSON
+                            for page_k, page_v in item["pages"].items():
+                                if (
+                                    isinstance(page_v, dict)
+                                    and col in page_v
+                                ):
+                                    update_payload[col] = clean_str(
+                                        page_v[col]
+                                    )
+
+                    update_payload["raw_data"] = json.dumps(
+                        item, ensure_ascii=False
+                    )
+                    update_payload["source_type"] = "JSON"
+
+                    fields = ["form_id"] + list(update_payload.keys())
+                    placeholders = ["?"] * len(fields)
+                    values = [fid] + list(update_payload.values())
+
+                    update_clause = ", ".join(
+                        [
+                            f'"{k}"=excluded."{k}"'
+                            for k in update_payload.keys()
+                        ]
+                    )
+
+                    sql = f"""
+                        INSERT INTO responses ({", ".join([f'"{f}"' for f in fields])})
+                        VALUES ({", ".join(placeholders)})
+                        ON CONFLICT(form_id) DO UPDATE SET
+                        {update_clause},
+                        updated_at = CURRENT_TIMESTAMP
+                    """
+                    cursor.execute(sql, values)
+                    updated_cnt += 1
 
                 conn.commit()
                 conn.close()
-                json_prog.empty()
-                
-                if updated_count > 0:
-                    st.success(
-                        f"✅ تعداد **{updated_count}** فرم بر اساس فایل JSON در دیتابیس به‌روزرسانی یا جایگزین گردید."
-                    )
-                    st.rerun()
-                else:
-                    st.warning("هیچ فرم معتبری (دارای form_id) در فایل JSON برای آپدیت پیدا نشد.")
 
-    except Exception as e:
-        st.error(f"❌ خطا در پردازش فایل JSON: {e}")
+                st.success(
+                    f"✅ تعداد {updated_cnt} پرسشنامه از طریق JSON به‌روزرسانی شد."
+                )
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ خطا در پردازش فایل JSON: {e}")
 
 st.divider()
 
 # ==========================================
-# ۳. نمایش دیتابیس ذخیره‌شده و ماندگار
+# بخش ۳: مشاهده، مدیریت و حذف ردیف‌ها
 # ==========================================
-st.subheader("🗄️ محتوای فعلی دیتابیس (نمای کلی)")
+st.subheader("🗄️ مدیریت و ویرایش ردیف‌های دیتابیس")
 
-conn = get_db_connection()
-try:
-    db_df = pd.read_sql_query(
-        """
-        SELECT 
-            form_id as "شناسه فرم", 
-            gender as "جنسیت", 
-            age as "سن", 
-            work_experience as "سابقه کار", 
-            current_service_experience as "سابقه در محل", 
-            education as "تحصیلات", 
-            organizational_post as "پست", 
-            source_type as "منبع داده", 
-            updated_at as "زمان ثبت/تغییر" 
-        FROM responses
-        ORDER BY updated_at DESC
-        """,
-        conn,
-    )
-    if not db_df.empty:
-        st.write(f"تعداد کل رکوردهای موجود: **{len(db_df)}**")
-        st.dataframe(db_df)
-        
-        if st.checkbox("آماده‌سازی لینک دانلود کل داده‌ها (به همراه داده خام JSON)"):
-            df_full = pd.read_sql_query("SELECT * FROM responses", conn)
-            
-            from io import BytesIO
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_full.to_excel(writer, index=False, sheet_name='Data')
-            processed_data = output.getvalue()
-            
-            st.download_button(
-                label="📥 دانلود کل دیتابیس (Excel)",
-                data=processed_data,
-                file_name="full_database_export.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            
-    else:
-        st.info(
-            "دیتابیس در حال حاضر خالی است. لطفا ابتدا فایل اکسل اولیه را در بخش ۱ بارگذاری کنید."
-        )
-except Exception as e:
-    st.error(f"❌ خطا در خواندن دیتابیس: {e}")
-finally:
+if table_exists and current_count > 0:
+    conn = get_db_connection()
+    df_db = pd.read_sql_query("SELECT * FROM responses", conn)
     conn.close()
 
-# بخش پاکسازی دیتابیس
-with st.expander("🛠️ تنظیمات پیشرفته (منطقه خطر)"):
-    st.warning("عملیات زیر غیرقابل بازگشت است.")
-    if st.button("💣 پاکسازی کامل دیتابیس"):
-        conn = get_db_connection()
-        conn.execute("DROP TABLE IF EXISTS responses")
-        conn.commit()
-        conn.close()
-        st.success("دیتابیس کاملا پاک شد. فایل دیتابیس در اجرای بعدی دوباره ساخته می‌شود.")
-        st.rerun()
+    st.write(f"تعداد ردیف‌های ثبت‌شده: **{len(df_db)}**")
+
+    # انتخاب ردیف‌ها برای حذف
+    st.markdown("##### 🗑️ حذف ردیف‌ها از دیتابیس")
+
+    selected_ids = st.multiselect(
+        "فرم‌هایی که قصد حذف آن‌ها را دارید انتخاب کنید (بر اساس form_id/کد G):",
+        options=df_db["form_id"].tolist(),
+    )
+
+    if selected_ids:
+        st.warning(
+            f"شما تعداد {len(selected_ids)} ردیف را برای حذف انتخاب کرده‌اید."
+        )
+        if st.button("❌ تایید و حذف ردیف‌های انتخاب شده"):
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            placeholders = ", ".join(["?"] * len(selected_ids))
+            cursor.execute(
+                f"DELETE FROM responses WHERE form_id IN ({placeholders})",
+                selected_ids,
+            )
+
+            conn.commit()
+            conn.close()
+
+            st.success("ردیف‌های مورد نظر با موفقیت حذف شدند.")
+            st.rerun()
+
+    # نمایش دیتابیس
+    st.markdown("##### 📋 جدول کامل اطلاعات:")
+    st.dataframe(df_db)
+
+    # خروجی گرفتن از اکسل
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df_db.to_excel(writer, index=False, sheet_name="Questionnaires")
+
+    st.download_button(
+        label="📥 دانلود کامل دیتابیس به صورت اکسل",
+        data=output.getvalue(),
+        file_name="questionnaires_database.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+else:
+    st.info("دیتابیس در حال حاضر خالی است.")
