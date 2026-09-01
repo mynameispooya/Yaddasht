@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سیستم صدور گواهی و ثبت اسامی</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <style>
+        body {
+            font-family: Tahoma, 'Segoe UI', sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], input[type="file"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        .date-group {
+            display: flex;
+            gap: 10px;
+        }
+        .date-group input {
+            flex: 1;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .btn-today {
+            background-color: #28a745;
+        }
+        .btn-today:hover {
+            background-color: #218838;
+        }
+        .btn-submit {
+            width: 100%;
+            background-color: #17a2b8;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .btn-submit:hover {
+            background-color: #138496;
+        }
+        .file-section {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border: 1px solid #e9ecef;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>سیستم ثبت گواهی و لیست اسامی</h2>
+
+    <div class="file-section">
+        <div class="form-group">
+            <label for="wordFile">1. آپلود فایل ورد (فرم نمونه):</label>
+            <input type="file" id="wordFile" accept=".docx">
+        </div>
+        <div class="form-group">
+            <label for="excelFile">2. آپلود فایل اکسل/CSV (اسامی):</label>
+            <input type="file" id="excelFile" accept=".xlsx, .xls, .csv">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label for="gender">جنسیت:</label>
+        <select id="gender">
+            <option value="آقای">آقای</option>
+            <option value="خانم">خانم</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="fullName">نام و نام خانوادگی:</label>
+        <input type="text" id="fullName" placeholder="مثال: علی احمدی">
+    </div>
+
+    <div class="form-group">
+        <label for="nationalId">کد ملی:</label>
+        <input type="text" id="nationalId" placeholder="مثال: 1234567890">
+    </div>
+
+    <div class="form-group">
+        <label for="dateField">تاریخ:</label>
+        <div class="date-group">
+            <input type="text" id="dateField" placeholder="مثال: 1402/05/20">
+            <button type="button" class="btn-today" onclick="setTodayDate()">درج تاریخ امروز</button>
+        </div>
+    </div>
+
+    <button type="button" class="btn-submit" onclick="processFiles()">ثبت اطلاعات و دانلود فایل‌های جدید</button>
+</div>
+
+<script>
+    let wordBuffer = null;
+    let excelBuffer = null;
+    let wordName = "Updated_Doc.docx";
+    let excelName = "Updated_List.xlsx";
+
+    // خواندن فایل ورد
+    document.getElementById('wordFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            wordName = file.name;
+            const reader = new FileReader();
+            reader.onload = (evt) => { wordBuffer = evt.target.result; };
+            reader.readAsArrayBuffer(file);
+        }
+    });
+
+    // خواندن فایل اکسل
+    document.getElementById('excelFile').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            excelName = file.name;
+            // در صورتی که فایل CSV باشد، نام خروجی را به xlsx تغییر میدهیم تا ساختار حفظ شود
+            if(excelName.endsWith('.csv')) excelName = excelName.replace('.csv', '.xlsx');
+            const reader = new FileReader();
+            reader.onload = (evt) => { excelBuffer = evt.target.result; };
+            reader.readAsArrayBuffer(file);
+        }
+    });
+
+    // تابع تنظیم تاریخ امروز به شمسی
+    function setTodayDate() {
+        const today = new Date();
+        const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+        // تولید تاریخ به فرمت YYYY/MM/DD
+        let persianDate = new Intl.DateTimeFormat('fa-IR', options).format(today);
+        // تبدیل اعداد فارسی به انگلیسی برای یکپارچگی (اختیاری)
+        const persianNumbers = [/۰/g, /۱/g, /۲/g, /۳/g, /۴/g, /۵/g, /۶/g, /۷/g, /۸/g, /۹/g];
+        const arabicNumbers  = [/٠/g, /١/g, /٢/g, /٣/g, /٤/g, /٥/g, /٦/g, /٧/g, /٨/g, /٩/g];
+        for(let i=0; i<10; i++) {
+            persianDate = persianDate.replace(persianNumbers[i], i).replace(arabicNumbers[i], i);
+        }
+        document.getElementById('dateField').value = persianDate;
+    }
+
+    // پردازش اصلی
+    async function processFiles() {
+        if (!wordBuffer || !excelBuffer) {
+            alert("لطفاً ابتدا فایل ورد و فایل اکسل را آپلود کنید!");
+            return;
+        }
+
+        const gender = document.getElementById('gender').value;
+        const fullName = document.getElementById('fullName').value;
+        const nationalId = document.getElementById('nationalId').value;
+        const date = document.getElementById('dateField').value;
+
+        if (!fullName || !nationalId || !date) {
+            alert("لطفاً تمام فیلدها (نام، کدملی و تاریخ) را پر کنید.");
+            return;
+        }
+
+        try {
+            // ==========================================
+            // 1. پردازش و آپدیت فایل اکسل
+            // ==========================================
+            const workbook = XLSX.read(excelBuffer, {type: 'array'});
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // تبدیل شیت به آرایه برای دسترسی راحت‌تر
+            const aoa = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+            
+            // پیدا کردن بالاترین شماره در ستون آخر (ستون شماره)
+            let maxNumber = 0;
+            for (let i = 1; i < aoa.length; i++) {
+                const row = aoa[i];
+                if (row && row.length >= 5) {
+                    let num = parseInt(row[4], 10);
+                    if (!isNaN(num) && num > maxNumber) {
+                        maxNumber = num;
+                    }
+                }
+            }
+            
+            const newNumber = maxNumber > 0 ? maxNumber + 1 : 1;
+
+            // اضافه کردن ردیف جدید: [نام, جنسیت, تاریخ, کدملی, شماره]
+            aoa.push([fullName, gender, date, nationalId, newNumber]);
+
+            // ساخت شیت جدید و جایگزینی
+            const newWorksheet = XLSX.utils.aoa_to_sheet(aoa);
+            workbook.Sheets[firstSheetName] = newWorksheet;
+            const excelOutput = XLSX.write(workbook, {bookType:'xlsx', type:'array'});
+            
+            // دانلود فایل اکسل آپدیت شده
+            saveAs(new Blob([excelOutput], {type: "application/octet-stream"}), "New_" + excelName);
+
+
+            // ==========================================
+            // 2. پردازش و آپدیت فایل ورد
+            // ==========================================
+            const zip = new JSZip();
+            const loadedZip = await zip.loadAsync(wordBuffer);
+            // فایل document.xml محتوای متنی فایل ورد را نگه می‌دارد
+            let documentXml = await loadedZip.file("word/document.xml").async("string");
+
+            // جایگذاری مقادیر (با توجه به تایپ دقیق شما در فایل نمونه)
+            // در فایل نمونه شما نوشته‌اید: (جنیست) که یک غلط املایی دارد اما ما دقیقاً همان را جستجو می‌کنیم
+            documentXml = documentXml.replace(/\(جنیست\)/g, gender);
+            documentXml = documentXml.replace(/\(نام و نام خانوادگی\)/g, fullName);
+            documentXml = documentXml.replace(/\(کد ملی\)/g, nationalId);
+
+            // ذخیره تغییرات در فایل xml
+            loadedZip.file("word/document.xml", documentXml);
+            
+            // تولید فایل ورد جدید
+            const wordOutput = await loadedZip.generateAsync({type: "blob"});
+            
+            // دانلود فایل ورد آپدیت شده
+            saveAs(wordOutput, "New_" + wordName);
+
+            alert("عملیات با موفقیت انجام شد! فایل‌ها در حال دانلود هستند.");
+
+        } catch (error) {
+            console.error(error);
+            alert("خطایی در پردازش فایل‌ها رخ داد. لطفاً کنسول مرورگر را بررسی کنید.");
+        }
+    }
+</script>
+
+</body>
+</html>
