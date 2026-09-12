@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>گزارش غیبت به تفکیک ماه</title>
+    <!-- استفاده از SheetJS برای خواندن و ساخت فایل اکسل -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: Tahoma, Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background-color: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 800px; width: 100%; text-align: center; }
+        h1 { color: #333; font-size: 22px; margin-bottom: 20px; }
+        p { color: #666; font-size: 14px; margin-bottom: 20px; line-height: 1.6; }
+        .file-input-wrapper { margin-bottom: 20px; }
+        input[type="file"] { display: none; }
+        .custom-file-upload { border: 1px solid #ccc; display: inline-block; padding: 10px 20px; cursor: pointer; border-radius: 5px; background-color: #f8f9fa; color: #333; transition: background-color 0.3s; }
+        .custom-file-upload:hover { background-color: #e2e6ea; }
+        #file-name { margin-top: 10px; font-size: 13px; color: #28a745; font-weight: bold; }
+        button { background-color: #007bff; color: white; border: none; padding: 12px 25px; border-radius: 5px; font-size: 16px; cursor: pointer; transition: background-color 0.3s; width: 100%; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #result { margin-top: 25px; text-align: right; background: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #ddd; display: none; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #007bff; color: white; }
+        .download-btn { background-color: #28a745; margin-top: 20px; display: none; }
+        .download-btn:hover { background-color: #218838; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>گزارش غیبت بیش از ۲ روز به تفکیک ماه</h1>
+    <p>فایل اکسل را آپلود کنید. سیستم ضمن استخراج کدهای پرسنلی، غیبت افراد دارای بیش از ۲ رکورد را بر اساس ماه‌های شمسی جداسازی کرده و خروجی را در قالب یک فایل اکسل جدید ارائه می‌دهد.</p>
+    
+    <div class="file-input-wrapper">
+        <label class="custom-file-upload">
+            <input type="file" id="excel-file" accept=".xlsx, .xls" />
+            انتخاب فایل اکسل
+        </label>
+        <div id="file-name">فایلی انتخاب نشده است</div>
+    </div>
+    
+    <button id="process-btn" disabled>پردازش و ساخت گزارش</button>
+    
+    <div id="result"></div>
+    <button id="download-btn" class="download-btn">دانلود خروجی اکسل (.xlsx)</button>
+</div>
+
+<script>
+    let excelData = null;
+    let exportExcelData = []; 
+    const monthNames = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+
+    function toEnglishDigits(str) {
+        const persianNumbers = [/۰/g, /۱/g, /۲/g, /۳/g, /۴/g, /۵/g, /۶/g, /۷/g, /۸/g, /۹/g];
+        const arabicNumbers  = [/٠/g, /١/g, /٢/g, /٣/g, /٤/g, /٥/g, /٦/g, /٧/g, /٨/g, /٩/g];
+        if(typeof str === 'string') {
+            for(let i=0; i<10; i++) {
+                str = str.replace(persianNumbers[i], i).replace(arabicNumbers[i], i);
+            }
+        }
+        return str;
+    }
+
+    document.getElementById('excel-file').addEventListener('change', function(e) {
+        let file = e.target.files[0];
+        if (file) {
+            document.getElementById('file-name').innerText = file.name;
+            document.getElementById('process-btn').disabled = false;
+            
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                let data = new Uint8Array(e.target.result);
+                let workbook = XLSX.read(data, {type: 'array'});
+                let firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                excelData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            document.getElementById('file-name').innerText = "فایلی انتخاب نشده است";
+            document.getElementById('process-btn').disabled = true;
+            excelData = null;
+        }
+    });
+
+    document.getElementById('process-btn').addEventListener('click', function() {
+        if (!excelData) return;
+        
+        let nameCol = -1, surnameCol = -1, dateCol = -1, headerRowIndex = -1;
+        
+        // پیدا کردن ستون‌ها با حذف قدرتمند تمام کاراکترهای مخفی و فواصل
+        for (let i = 0; i < Math.min(50, excelData.length); i++) {
+            let row = excelData[i];
+            if (!row) continue;
+            for (let j = 0; j < row.length; j++) {
+                let cellVal = row[j] ? String(row[j]) : '';
+                let cleanVal = cellVal.replace(/[\s\u200B-\u200D\uFEFF\u200E\u200F]/g, ''); 
+                
+                if (cleanVal === 'نام') nameCol = j;
+                if (cleanVal === 'نامخانوادگی') surnameCol = j;
+                if (cleanVal === 'تاریخ') dateCol = j; 
+            }
+            if (nameCol !== -1 && surnameCol !== -1 && dateCol !== -1) { 
+                headerRowIndex = i; 
+                break; 
+            }
+        }
+        
+        if (headerRowIndex === -1) { 
+            alert("ساختار فایل معتبر نیست. یکی از ستون‌های 'نام'، 'نام خانوادگی' یا 'تاریخ' پیدا نشد."); 
+            return; 
+        }
+
+        let persons = {};
+        
+        for (let i = headerRowIndex + 1; i < excelData.length; i++) {
+            let row = excelData[i];
+            if (!row) continue;
+            
+            // پاکسازی کاراکترهای مخفی از دیتای اصلی هنگام خواندن
+            let name = row[nameCol] ? String(row[nameCol]).replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '').trim() : '';
+            let surname = row[surnameCol] ? String(row[surnameCol]).replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '').trim() : '';
+            let rawDate = row[dateCol] ? String(row[dateCol]).replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '').trim() : '';
+            
+            if (name && surname) {
+                let key = surname + "_" + name;
+                if (!persons[key]) {
+                    persons[key] = { 
+                        fullName: name + " " + surname, 
+                        code: "نامشخص", 
+                        months: Array(12).fill(0),
+                        total: 0 
+                    };
+                }
+                
+                let maxSearchCol = Math.min(row.length, Math.max(nameCol, surnameCol) + 5);
+                for (let c = Math.max(nameCol, surnameCol) + 1; c < maxSearchCol; c++) {
+                    let val = row[c] ? String(row[c]).trim() : '';
+                    if (/^[\d۰-۹]+$/.test(val) && val.length >= 3) {
+                        persons[key].code = val;
+                    }
+                }
+
+                if (rawDate) {
+                    let enDate = toEnglishDigits(rawDate);
+                    let dateMatch = enDate.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+                    if(dateMatch) {
+                        let monthIndex = parseInt(dateMatch[2], 10) - 1; 
+                        if(monthIndex >= 0 && monthIndex < 12) {
+                            persons[key].months[monthIndex]++;
+                            persons[key].total++; 
+                        }
+                    }
+                }
+            }
+        }
+        
+        exportExcelData = [];
+        let headers = ["نام و نام خانوادگی", "کد پرسنلی", ...monthNames, "مجموع"];
+        exportExcelData.push(headers);
+        
+        let countMatches = 0;
+        let previewHtml = "<strong>پیش‌نمایش افراد با بیش از ۲ غیبت:</strong><br><table><tr>";
+        headers.forEach(h => previewHtml += `<th>${h}</th>`);
+        previewHtml += "</tr>";
+        
+        for (let key in persons) {
+            if (persons[key].total > 2) {
+                countMatches++;
+                let p = persons[key];
+                let rowData = [p.fullName, p.code, ...p.months, p.total];
+                exportExcelData.push(rowData);
+                
+                previewHtml += "<tr>";
+                rowData.forEach(cell => previewHtml += `<td>${cell}</td>`);
+                previewHtml += "</tr>";
+            }
+        }
+        previewHtml += "</table>";
+        
+        let resultDiv = document.getElementById('result');
+        let downloadBtn = document.getElementById('download-btn');
+        
+        if (countMatches > 0) {
+            resultDiv.innerHTML = previewHtml; 
+            resultDiv.style.display = 'block'; 
+            downloadBtn.style.display = 'block';
+        } else {
+            resultDiv.innerHTML = "<div>هیچ شخصی با بیش از ۲ روز غیبت یافت نشد.</div>"; 
+            resultDiv.style.display = 'block'; 
+            downloadBtn.style.display = 'none';
+        }
+    });
+
+    document.getElementById('download-btn').addEventListener('click', function() {
+        if (exportExcelData.length <= 1) return; 
+        
+        const ws = XLSX.utils.aoa_to_sheet(exportExcelData);
+        ws['!dir'] = 'rtl';
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "گزارش غیبت ماهانه");
+        XLSX.writeFile(wb, "Monthly_Absence_Report.xlsx");
+    });
+</script>
+</body>
+</html>
