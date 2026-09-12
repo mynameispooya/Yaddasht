@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>استخراج غیبت بیش از ۳ روز</title>
+    <!-- اضافه کردن کتابخانه برای خواندن فایل اکسل -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: Tahoma, Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background-color: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 600px; width: 100%; text-align: center; }
+        h1 { color: #333; font-size: 22px; margin-bottom: 20px; }
+        p { color: #666; font-size: 14px; margin-bottom: 20px; line-height: 1.6; }
+        .file-input-wrapper { margin-bottom: 20px; }
+        input[type="file"] { display: none; }
+        .custom-file-upload { border: 1px solid #ccc; display: inline-block; padding: 10px 20px; cursor: pointer; border-radius: 5px; background-color: #f8f9fa; color: #333; transition: background-color 0.3s; }
+        .custom-file-upload:hover { background-color: #e2e6ea; }
+        #file-name { margin-top: 10px; font-size: 13px; color: #28a745; font-weight: bold; }
+        button { background-color: #007bff; color: white; border: none; padding: 12px 25px; border-radius: 5px; font-size: 16px; cursor: pointer; transition: background-color 0.3s; width: 100%; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #result { margin-top: 25px; text-align: right; background: #f8f9fa; padding: 15px; border-radius: 5px; border: 1px solid #ddd; display: none; max-height: 250px; overflow-y: auto; }
+        .result-item { border-bottom: 1px solid #eee; padding: 8px 0; font-size: 14px; }
+        .result-item:last-child { border-bottom: none; }
+        .download-btn { background-color: #28a745; margin-top: 15px; display: none; }
+        .download-btn:hover { background-color: #218838; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>استخراج کدهای پرسنلی با بیش از ۳ ردیف</h1>
+    <p>فایل اکسل را آپلود کنید. سیستم ردیف‌های هر شخص را می‌شمارد و افراد با بیش از ۳ ردیف را استخراج می‌کند.</p>
+    
+    <div class="file-input-wrapper">
+        <label class="custom-file-upload">
+            <input type="file" id="excel-file" accept=".xlsx, .xls" />
+            انتخاب فایل اکسل
+        </label>
+        <div id="file-name">فایلی انتخاب نشده است</div>
+    </div>
+    
+    <button id="process-btn" disabled>پردازش و استخراج</button>
+    
+    <div id="result"></div>
+    <button id="download-btn" class="download-btn">دانلود فایل خروجی (TXT)</button>
+</div>
+
+<script>
+    let excelData = null;
+    let extractedData = [];
+
+    // رویداد انتخاب فایل
+    document.getElementById('excel-file').addEventListener('change', function(e) {
+        let file = e.target.files[0];
+        if (file) {
+            document.getElementById('file-name').innerText = file.name;
+            document.getElementById('process-btn').disabled = false;
+            
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                let data = new Uint8Array(e.target.result);
+                let workbook = XLSX.read(data, {type: 'array'});
+                let firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                // تبدیل شیت به آرایه دو بعدی
+                excelData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+            };
+            reader.readAsArrayBuffer(file);
+        } else {
+            document.getElementById('file-name').innerText = "فایلی انتخاب نشده است";
+            document.getElementById('process-btn').disabled = true;
+            excelData = null;
+        }
+    });
+
+    // رویداد پردازش فایل
+    document.getElementById('process-btn').addEventListener('click', function() {
+        if (!excelData) return;
+        
+        let nameCol = -1, surnameCol = -1, headerRowIndex = -1;
+        
+        // پیدا کردن سطر هدر که شامل "نام" و "نام خانوادگی" است
+        for (let i = 0; i < Math.min(20, excelData.length); i++) {
+            let row = excelData[i];
+            if (!row) continue;
+            for (let j = 0; j < row.length; j++) {
+                let cellVal = row[j] ? String(row[j]).trim() : '';
+                if (cellVal === 'نام') nameCol = j;
+                if (cellVal === 'نام خانوادگی') surnameCol = j;
+            }
+            if (nameCol !== -1 && surnameCol !== -1) { headerRowIndex = i; break; }
+        }
+        
+        if (headerRowIndex === -1) { 
+            alert("ستون‌های 'نام' و 'نام خانوادگی' پیدا نشدند."); 
+            return; 
+        }
+
+        let persons = {};
+        
+        // بررسی سطرهای اطلاعات افراد
+        for (let i = headerRowIndex + 1; i < excelData.length; i++) {
+            let row = excelData[i];
+            if (!row) continue;
+            
+            let name = row[nameCol] ? String(row[nameCol]).trim() : '';
+            let surname = row[surnameCol] ? String(row[surnameCol]).trim() : '';
+            
+            if (name && surname) {
+                let key = surname + "_" + name;
+                if (!persons[key]) {
+                    persons[key] = { name: name, surname: surname, count: 0, code: "نامشخص" };
+                }
+                persons[key].count++;
+                
+                // جستجو برای پیدا کردن کد پرسنلی در ستون های بعدی 
+                let maxSearchCol = Math.min(row.length, Math.max(nameCol, surnameCol) + 5);
+                for (let c = Math.max(nameCol, surnameCol) + 1; c < maxSearchCol; c++) {
+                    let val = row[c] ? String(row[c]).trim() : '';
+                    // بررسی اینکه مقدار آیا شامل اعداد (فارسی یا انگلیسی) با طول حداقل 3 است
+                    if (/^[\d۰-۹]+$/.test(val) && val.length >= 3) {
+                        persons[key].code = val;
+                    }
+                }
+            }
+        }
+        
+        extractedData = [];
+        let resultHtml = "<strong>افراد با بیش از ۳ ردیف:</strong><br><br>";
+        let countMatches = 0;
+        
+        // استخراج افرادی که بیش از 3 ردیف دارند
+        for (let key in persons) {
+            if (persons[key].count > 3) {
+                countMatches++;
+                let p = persons[key];
+                let textLine = `نام: ${p.name} | نام خانوادگی: ${p.surname} | کد پرسنلی: ${p.code} | تعداد ردیف: ${p.count}`;
+                extractedData.push(textLine);
+                resultHtml += `<div class="result-item">${textLine}</div>`;
+            }
+        }
+        
+        let resultDiv = document.getElementById('result');
+        let downloadBtn = document.getElementById('download-btn');
+        
+        // نمایش خروجی
+        if (countMatches > 0) {
+            resultDiv.innerHTML = resultHtml; 
+            resultDiv.style.display = 'block'; 
+            downloadBtn.style.display = 'block';
+        } else {
+            resultDiv.innerHTML = "<div class='result-item'>هیچ شخصی با بیش از ۳ ردیف یافت نشد.</div>"; 
+            resultDiv.style.display = 'block'; 
+            downloadBtn.style.display = 'none';
+        }
+    });
+
+    // رویداد دانلود فایل Txt
+    document.getElementById('download-btn').addEventListener('click', function() {
+        if (extractedData.length === 0) return;
+        
+        // افزودن BOM برای پشتیبانی از کاراکترهای فارسی در فایل متنی
+        let txtContent = "\uFEFFگزارش افراد با بیش از ۳ ردیف غیبت\n--------------------------------------------------\n";
+        extractedData.forEach(line => { txtContent += line + "\n"; });
+        
+        let blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement("a");
+        a.href = url; 
+        a.download = "extracted_personnel.txt";
+        document.body.appendChild(a); 
+        a.click(); 
+        document.body.removeChild(a); 
+        URL.revokeObjectURL(url);
+    });
+</script>
+</body>
+</html>
