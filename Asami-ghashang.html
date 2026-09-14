@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-width=1.0">
+    <title>پردازش لیست تردد ناقص</title>
+    <!-- استفاده از کتابخانه SheetJS برای خواندن فایل اکسل -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        @font-face {
+            font-family: 'Vazirmatn';
+            src: url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.0.0/Vazirmatn-font-face.css');
+        }
+        body {
+            font-family: 'Vazirmatn', Tahoma, sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            padding: 30px;
+            width: 100%;
+            max-width: 800px;
+        }
+        h2 {
+            color: #1f2937;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .upload-area {
+            border: 2px dashed #d1d5db;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #f9fafb;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .file-label {
+            background-color: #3b82f6;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-block;
+            transition: background-color 0.3s;
+        }
+        .file-label:hover {
+            background-color: #2563eb;
+        }
+        .file-name {
+            margin-top: 10px;
+            color: #6b7280;
+            font-size: 0.9em;
+        }
+        textarea {
+            width: 100%;
+            height: 350px;
+            padding: 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background-color: #f9fafb;
+            font-family: Tahoma, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: vertical;
+            box-sizing: border-box;
+            white-space: pre-wrap;
+        }
+        .btn-copy {
+            background-color: #10b981;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-family: inherit;
+            margin-top: 15px;
+            width: 100%;
+            display: none;
+            transition: background-color 0.3s;
+        }
+        .btn-copy:hover {
+            background-color: #059669;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>ابزار استخراج پیام‌های تردد ناقص</h2>
+    
+    <div class="upload-area">
+        <label for="excelFile" class="file-label">انتخاب فایل اکسل (لیست-تردد-ناقص.xlsx)</label>
+        <input type="file" id="excelFile" accept=".xlsx, .xls">
+        <div class="file-name" id="fileName">فایلی انتخاب نشده است</div>
+    </div>
+
+    <textarea id="output" readonly placeholder="نتیجه پردازش در اینجا نمایش داده خواهد شد..."></textarea>
+    
+    <button id="copyBtn" class="btn-copy">📋 کپی کردن تمام متن</button>
+</div>
+
+<script>
+    document.getElementById('excelFile').addEventListener('change', handleFile, false);
+    document.getElementById('copyBtn').addEventListener('click', copyText);
+
+    function handleFile(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        document.getElementById('fileName').textContent = file.name;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            
+            // گرفتن اولین شیت (Sheet)
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // تبدیل شیت به فرمت JSON
+            const json = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+            
+            processExcelData(json);
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function processExcelData(data) {
+        let finalOutput = "";
+
+        data.forEach(row => {
+            // استخراج ستون‌های مورد نیاز (ستون‌های کاربر و وضعیت نادیده گرفته می‌شوند)
+            let title = row['عنوان'] || "";
+            let message = row['پیغام'] || "";
+
+            // در صورتی که سطر کاملا خالی نباشد
+            if (title.trim() !== "" || message.trim() !== "") {
+                // چاپ عنوان با ایموجی (👤 به عنوان ایموجی معرف فرد/عنوان)
+                finalOutput += `👤 ${title}\n`;
+
+                // بررسی وجود تگ </br> و جدا کردن پیام‌ها
+                // از Regex برای پوشش دادن </br> یا <br> یا <br/> استفاده شده است تا خطا کمتر شود
+                let messagesArray = message.split(/<\/br>|<br\s*\/?>/gi);
+                
+                messagesArray.forEach(msg => {
+                    let cleanMsg = msg.trim();
+                    if (cleanMsg !== "") {
+                        // چاپ هر خط پیام با ایموجی اخطار
+                        finalOutput += `⚠️ ${cleanMsg}\n`;
+                    }
+                });
+
+                // خط جداکننده
+                finalOutput += `---------------\n`;
+            }
+        });
+
+        // نمایش خروجی در Textarea
+        const outputBox = document.getElementById('output');
+        outputBox.value = finalOutput;
+        
+        // نمایش دکمه کپی
+        if (finalOutput.trim() !== "") {
+            document.getElementById('copyBtn').style.display = 'block';
+        } else {
+            document.getElementById('copyBtn').style.display = 'none';
+        }
+    }
+
+    function copyText() {
+        const outputBox = document.getElementById('output');
+        
+        // استفاده از Clipboard API برای کپی کردن
+        navigator.clipboard.writeText(outputBox.value).then(() => {
+            const btn = document.getElementById('copyBtn');
+            const originalText = btn.textContent;
+            btn.textContent = "✅ متن با موفقیت کپی شد!";
+            btn.style.backgroundColor = "#047857";
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.backgroundColor = "#10b981";
+            }, 2000);
+        }).catch(err => {
+            alert("خطا در کپی کردن متن: " + err);
+        });
+    }
+</script>
+
+</body>
+</html>
