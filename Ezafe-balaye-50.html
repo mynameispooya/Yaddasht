@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مرتب‌سازی کارکرد اضافه کاری</title>
+    <!-- بارگذاری فونت فارسی -->
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    <!-- بارگذاری کتابخانه SheetJS برای خواندن و نوشتن اکسل -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h2 {
+            text-align: center;
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .upload-area {
+            border: 2px dashed #3498db;
+            padding: 25px;
+            text-align: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background: #ecf0f1;
+            transition: 0.3s;
+        }
+        .upload-area:hover {
+            background: #e1e8e9;
+            border-color: #2980b9;
+        }
+        input[type="file"] {
+            margin-top: 10px;
+            cursor: pointer;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+            display: none; /* مخفی تا زمانی که فایل آپلود شود */
+        }
+        button {
+            font-family: 'Vazirmatn', sans-serif;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-sort-desc {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .btn-sort-desc:hover { background-color: #c0392b; }
+
+        .btn-sort-asc {
+            background-color: #27ae60;
+            color: white;
+        }
+        .btn-sort-asc:hover { background-color: #16a085; }
+
+        .btn-reset {
+            background-color: #7f8c8d;
+            color: white;
+        }
+        .btn-reset:hover { background-color: #95a5a6; }
+
+        .btn-export {
+            background-color: #2980b9;
+            color: white;
+        }
+        .btn-export:hover { background-color: #1f618d; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+            display: none; /* مخفی تا زمانی که فایل آپلود شود */
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: #34495e;
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        .highlight-col {
+            background-color: #fcf8e3 !important;
+            font-weight: bold;
+        }
+        .status {
+            text-align: center;
+            color: #7f8c8d;
+            font-style: italic;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>مرتب‌سازی گزارش کارکرد اضافه کاری</h2>
+    
+    <div class="upload-area">
+        <p>فایل اکسل خود را در اینجا آپلود کنید</p>
+        <input type="file" id="fileInput" accept=".xlsx, .xls">
+    </div>
+
+    <div class="status" id="statusText"></div>
+
+    <div class="controls" id="controls">
+        <button class="btn-sort-desc" onclick="sortData('desc')">مرتب‌سازی (بیشترین به کمترین) ⬇️</button>
+        <button class="btn-sort-asc" onclick="sortData('asc')">مرتب‌سازی (کمترین به بیشترین) ⬆️</button>
+        <button class="btn-reset" onclick="resetData()">حالت اولیه 🔄</button>
+        <button class="btn-export" onclick="exportToExcel()">دانلود فایل اکسل 📥</button>
+    </div>
+
+    <div id="tableContainer">
+        <table id="dataTable"></table>
+    </div>
+</div>
+
+<script>
+    let originalData = [];
+    let currentDisplayData = []; // داده هایی که در حال حاضر در جدول نمایش داده میشوند
+    let headers = [];
+    let targetColIndex = -1;
+
+    // تبدیل اعداد فارسی/عربی به انگلیسی برای محاسبات
+    function convertToEnglishDigits(str) {
+        if(str === null || str === undefined) return '';
+        return str.toString()
+            .replace(/[\u06F0-\u06F9]/g, d => d.charCodeAt(0) - 0x06F0) // اعداد فارسی
+            .replace(/[\u0660-\u0669]/g, d => d.charCodeAt(0) - 0x0660); // اعداد عربی
+    }
+
+    // تبدیل ساختار hhh:mm به کل دقیقه
+    function timeToMinutes(timeStr) {
+        if (!timeStr) return -1;
+        const enStr = convertToEnglishDigits(timeStr);
+        const parts = enStr.split(':');
+        if (parts.length === 2) {
+            const hours = parseInt(parts[0], 10) || 0;
+            const minutes = parseInt(parts[1], 10) || 0;
+            return (hours * 60) + minutes;
+        }
+        return -1;
+    }
+
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        document.getElementById('statusText').innerText = 'در حال پردازش فایل...';
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                
+                // خواندن داده ها به صورت آرایه ای از آرایه ها
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" });
+                
+                // پیدا کردن سطر هدر و ستون مورد نظر
+                headers = [];
+                let headerRowIndex = -1;
+                
+                for(let i = 0; i < jsonData.length; i++) {
+                    if(jsonData[i].includes('کارکرد اضافه کاری')) {
+                        headers = jsonData[i];
+                        headerRowIndex = i;
+                        targetColIndex = jsonData[i].indexOf('کارکرد اضافه کاری');
+                        break;
+                    }
+                }
+
+                if(headerRowIndex === -1) {
+                    alert('ستون "کارکرد اضافه کاری" در فایل یافت نشد!');
+                    document.getElementById('statusText').innerText = 'خطا در یافتن ستون.';
+                    return;
+                }
+
+                // استخراج سطرهای داده (بدون هدر)
+                originalData = jsonData.slice(headerRowIndex + 1).filter(row => row.length > 0);
+
+                document.getElementById('statusText').innerText = `فایل با موفقیت بارگذاری شد. ${originalData.length} رکورد یافت شد.`;
+                document.getElementById('controls').style.display = 'flex';
+                
+                renderTable(originalData);
+            } catch (error) {
+                console.error(error);
+                alert('خطا در خواندن فایل اکسل. لطفا مطمئن شوید فایل ساختار صحیحی دارد.');
+                document.getElementById('statusText').innerText = 'خطا در پردازش فایل.';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    function sortData(order) {
+        if (originalData.length === 0 || targetColIndex === -1) return;
+
+        let dataToSort = [...originalData];
+
+        dataToSort.sort((a, b) => {
+            const valA = timeToMinutes(a[targetColIndex]);
+            const valB = timeToMinutes(b[targetColIndex]);
+
+            if (order === 'desc') {
+                return valB - valA; // نزولی
+            } else {
+                return valA - valB; // صعودی
+            }
+        });
+
+        renderTable(dataToSort);
+    }
+
+    function resetData() {
+        renderTable(originalData);
+    }
+
+    function renderTable(data) {
+        currentDisplayData = data; // ذخیره داده های فعلی برای امکان دانلود
+        const table = document.getElementById('dataTable');
+        table.style.display = 'table';
+        let html = '<thead><tr>';
+        
+        headers.forEach(header => {
+            if(header && header.toString().trim() !== '*') {
+                html += `<th>${header}</th>`;
+            }
+        });
+        html += '</tr></thead><tbody>';
+
+        data.forEach(row => {
+            html += '<tr>';
+            row.forEach((cell, index) => {
+                if(headers[index] && headers[index].toString().trim() !== '*') {
+                    if(index === targetColIndex) {
+                        html += `<td class="highlight-col">${cell}</td>`;
+                    } else {
+                        html += `<td>${cell}</td>`;
+                    }
+                }
+            });
+            html += '</tr>';
+        });
+        html += '</tbody>';
+        
+        table.innerHTML = html;
+    }
+
+    // تابع تولید و دانلود فایل اکسل
+    function exportToExcel() {
+        if (currentDisplayData.length === 0) {
+            alert("ابتدا فایلی را آپلود کنید.");
+            return;
+        }
+
+        try {
+            // ساختن آرایه ای تمیز برای اکسل (بدون ستون های خالی *)
+            let exportArray = [];
+            
+            // فیلتر کردن هدرها
+            let visibleHeaders = headers.filter(h => h !== null && h !== undefined && h.toString().trim() !== '*');
+            exportArray.push(visibleHeaders);
+
+            // فیلتر کردن ردیف های داده
+            currentDisplayData.forEach(row => {
+                let newRow = [];
+                headers.forEach((h, index) => {
+                    if(h !== null && h !== undefined && h.toString().trim() !== '*') {
+                        // اگر سلول خالی بود، رشته خالی قرار بده تا خطا ندهد
+                        let cellValue = row[index] !== null && row[index] !== undefined ? row[index] : "";
+                        newRow.push(cellValue);
+                    }
+                });
+                exportArray.push(newRow);
+            });
+
+            // ایجاد ورک شیت
+            const ws = XLSX.utils.aoa_to_sheet(exportArray);
+            
+            // تنظیم عرض ستون ها به صورت خودکار
+            const colWidths = visibleHeaders.map((h, i) => {
+                let maxLen = h ? h.toString().length : 10;
+                exportArray.forEach(row => {
+                    let val = row[i] !== null && row[i] !== undefined ? row[i].toString().length : 0;
+                    if (val > maxLen) maxLen = val;
+                });
+                return { wch: maxLen + 2 };
+            });
+            ws['!cols'] = colWidths;
+
+            // ایجاد ورک بوک
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sorted Data");
+            
+            // تبدیل ورک بوک به فایل باینری (Blob)
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/octet-stream' });
+            
+            // ساخت لینک دانلود موقت
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "Sorted_Overtime_Report.xlsx";
+            document.body.appendChild(a);
+            a.click();
+            
+            // پاک کردن لینک موقت
+            setTimeout(() => {
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+
+        } catch (error) {
+            console.error("خطا در تولید فایل اکسل:", error);
+            alert("متاسفانه در زمان دانلود فایل خطایی رخ داد: " + error.message);
+        }
+    }
+</script>
+
+</body>
+</html>
