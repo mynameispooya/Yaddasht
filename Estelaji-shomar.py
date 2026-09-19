@@ -1,82 +1,104 @@
+#2
 import streamlit as st
 import pandas as pd
 import re
 
-# تنظیمات صفحه اپلیکیشن
 st.set_page_config(page_title="تحلیل مرخصی استعلاجی", page_icon="💊", layout="wide")
 
 def clean_and_load_excel(uploaded_file):
     """
-    این تابع فایل اکسل را می‌خواند و مشکل ستون 'اطلاعات تردد' و هدرهای چندگانه را حل می‌کند.
+    این تابع به صورت داینامیک فایل اکسل را بررسی کرده و ستون‌ها را بر اساس نامشان پیدا می‌کند.
+    این روش مشکل فایل‌های دارای هدرهای ترکیبی (Multi-Index) را به طور کامل حل می‌کند.
     """
-    # خواندن کل فایل بدون در نظر گرفتن هدر برای پیدا کردن ردیف اصلی تیترها
-    df_raw = pd.read_excel(uploaded_file, header=None)
+    # خواندن فایل بدون فرض هیچ هدری
+    df = pd.read_excel(uploaded_file, header=None)
     
-    header_idx = -1
-    # جستجو برای پیدا کردن ردیفی که شامل 'وضعیت' و 'تاریخ' است (ردیف اصلی تیترها)
-    for idx, row in df_raw.iterrows():
-        row_str = " ".join(row.dropna().astype(str))
-        if "وضعیت" in row_str and "تاریخ" in row_str and "کدپرسنلی" in row_str:
-            header_idx = idx
-            break
-            
-    if header_idx == -1:
-        st.error(f"ساختار فایل {uploaded_file.name} معتبر نیست. ردیف تیترها پیدا نشد.")
+    col_map = {}
+    status_row_idx = -1
+    
+    # جستجو در تمام ردیف‌ها برای پیدا کردن شماره ستون (Index) هر تیتر
+    for idx, row in df.iterrows():
+        row_vals = row.dropna().astype(str).values
+        # پیدا کردن ردیفی که شامل کلمات کلیدی تاریخ و پرسنلی است
+        if any('کدپرسنلی' in val.replace(' ', '') for val in row_vals):
+            for col_idx, val in enumerate(row.values):
+                if pd.notna(val):
+                    v_str = str(val).strip().replace(' ', '')
+                    if 'کدپرسنلی' in v_str:
+                        col_map['کدپرسنلی'] = col_idx
+                    elif 'تاریخ' in v_str and 'تاریخ' not in col_map: 
+                        col_map['تاریخ'] = col_idx
+                    elif 'نامونامخانوادگی' in v_str:
+                        col_map['نام و نام خانوادگی'] = col_idx
+                    elif 'روز' == v_str: 
+                        col_map['روز'] = col_idx
+                        
+        # پیدا کردن ردیف وضعیت که ممکن است در سطر پایین‌تر (به خاطر ادغام سلول‌ها) باشد
+        if any('وضعیت' in val for val in row_vals):
+            for col_idx, val in enumerate(row.values):
+                if pd.notna(val) and 'وضعیت' in str(val).strip():
+                    col_map['وضعیت'] = col_idx
+                    status_row_idx = idx
+                    break
+    
+    # بررسی اینکه آیا همه ستون‌های حیاتی پیدا شدند؟
+    required_keys = ['وضعیت', 'روز', 'تاریخ', 'نام و نام خانوادگی', 'کدپرسنلی']
+    if not all(k in col_map for k in required_keys) or status_row_idx == -1:
+        missing = [k for k in required_keys if k not in col_map]
+        st.error(f"ساختار فایل '{uploaded_file.name}' معتبر نیست. ستون‌های زیر پیدا نشدند: {', '.join(missing)}")
         return None
         
-    # تنظیم ردیف پیدا شده به عنوان هدر و حذف ردیف‌های اضافی بالای آن (مانند 'اطلاعات تردد')
-    df = df_raw.iloc[header_idx+1:].copy()
-    df.columns = df_raw.iloc[header_idx].values
+    # برش داده‌ها از یک ردیف بعد از کلمه 'وضعیت'
+    data = df.iloc[status_row_idx + 1:].copy()
     
-    # حذف ردیف‌هایی که کد پرسنلی یا تاریخ ندارند (ردیف‌های خالی انتهای فایل)
-    df = df.dropna(subset=['کدپرسنلی', 'تاریخ'])
+    # فقط ستون‌های شناسایی شده استخراج می‌شوند
+    data = data[list(col_map.values())]
+    data.columns = list(col_map.keys())
     
-    # مرتب‌سازی نام ستون‌ها برای جلوگیری از وجود فاصله (Space) اضافه
-    df.columns = [str(col).strip() for col in df.columns]
+    # پر کردن سلول‌های ادغام شده (Merged Cells) که در پانداس به شکل خالی می‌افتند
+    data['تاریخ'] = data['تاریخ'].ffill()
+    data['کدپرسنلی'] = data['کدپرسنلی'].ffill()
+    data['نام و نام خانوادگی'] = data['نام و نام خانوادگی'].ffill()
+    data['روز'] = data['روز'].ffill()
     
-    return df
+    # حذف ردیف‌هایی که وضعیت در آن‌ها خالی است
+    data = data.dropna(subset=['وضعیت'])
+    
+    return data
 
 def is_pure_sick_leave(statuses):
     """
-    این تابع بررسی می‌کند که آیا در وضعیت‌های ثبت شده برای یک روز، 
-    فقط و فقط "مرخصی استعلاجی" وجود دارد یا با چیز دیگری ترکیب شده است.
+    بررسی می‌کند که آیا در یک روز خاص فقط 'مرخصی استعلاجی' ثبت شده است 
+    یا اینکه با موارد دیگر (استحقاقی، حضور و ...) ترکیب شده است.
     """
-    # فیلتر کردن مقادیر خالی
     valid_statuses = [str(s) for s in statuses if pd.notna(s) and str(s).strip() not in ('', 'nan')]
     if not valid_statuses:
         return False
         
     combined_status = " ".join(valid_statuses)
     
-    # اگر اصلا کلمه استعلاجی در آن روز نیست، پس فالس برگردان
     if "استعلاجی" not in combined_status:
         return False
         
-    # حذف کلمات مربوط به مرخصی استعلاجی برای بررسی اینکه آیا کلمه دیگری باقی می‌ماند یا خیر
+    # کلمات مرخصی و استعلاجی حذف می‌شوند
     cleaned = combined_status.replace("مرخصی", "").replace("استعلاجی", "")
-    
-    # حذف تمام کاراکترهای غیرحروفی (مثل فاصله‌ها، خط تیره، اسلش، اعداد و...)
     cleaned = re.sub(r'\W+', '', cleaned)
     cleaned = re.sub(r'\d+', '', cleaned)
     
-    # اگر بعد از حذف 'مرخصی' و 'استعلاجی'، کلمه دیگری (مثل 'استحقاقی'، 'حضور' و...) 
-    # در متن باقی مانده باشد، یعنی خالص نیست و نباید شمرده شود.
+    # اگر بعد از حذف استعلاجی، کلمه‌ای مثل حضور یا استحقاقی بماند، False برمی‌گردد
     if len(cleaned.strip()) > 0:
         return False
         
     return True
 
-# رابط کاربری Streamlit
 st.title("📊 سیستم تحلیل و شمارش مرخصی‌های استعلاجی")
 st.markdown("""
-این برنامه فایل‌های اکسل حضور و غیاب (با ساختار مشابه `تعداد-استعلاجی.xlsx`) را دریافت کرده، 
-هدرهای آن را اصلاح می‌کند و به صورت هوشمند مرخصی‌های استعلاجی خالص را استخراج می‌نماید.
-روزهایی که استعلاجی با موارد دیگر (مثل استحقاقی یا حضور) ترکیب شده باشد، شمرده نخواهند شد.
+این برنامه به صورت هوشمند ستون‌ها را حتی در فایل‌های **Multi-Index (هدرهای تو در تو و سلول‌های ادغام شده)** تشخیص می‌دهد.
+روزهایی که استعلاجی با موارد دیگر ترکیب شده باشد (مثل استحقاقی یا حضور)، به عنوان استعلاجی شمرده **نخواهند شد**.
 """)
 
 st.divider()
 
-# آپلود یک یا چند فایل
 uploaded_files = st.file_uploader("فایل‌های اکسل خود را اینجا آپلود کنید", type=['xlsx', 'xls'], accept_multiple_files=True)
 
 if uploaded_files:
@@ -88,41 +110,41 @@ if uploaded_files:
             
             if df is not None:
                 results = []
-                # گروه‌بندی بر اساس کدپرسنلی و نام
                 grouped = df.groupby(['کدپرسنلی', 'نام و نام خانوادگی'])
                 
                 for (emp_code, emp_name), group in grouped:
                     valid_sick_leaves = []
-                    
-                    # گروه‌بندی داخلی بر اساس تاریخ برای بررسی ترکیب وضعیت‌ها در یک روز مشخص
                     date_grouped = group.groupby(['تاریخ', 'روز'])
                     
                     for (date, day), d_group in date_grouped:
                         statuses = d_group['وضعیت'].tolist()
                         
-                        # بررسی شرط حیاتی: آیا این روز خالصاً استعلاجی است؟
+                        # بررسی شرط خلوص مرخصی استعلاجی
                         if is_pure_sick_leave(statuses):
                             valid_sick_leaves.append({
                                 'تاریخ': date,
                                 'روز': day
                             })
                             
-                    # اگر شخص مرخصی استعلاجی معتبر داشت، اطلاعاتش را ذخیره کن
                     if valid_sick_leaves:
-                        # مرتب‌سازی تاریخ‌ها تا اولین و آخرین روز مشخص شود
                         valid_sick_leaves = sorted(valid_sick_leaves, key=lambda x: x['تاریخ'])
                         start_date = valid_sick_leaves[0]
                         end_date = valid_sick_leaves[-1]
                         
+                        try:
+                            # حذف اعشار از کد پرسنلی اگر به صورت float خوانده شده
+                            clean_emp_code = int(float(emp_code))
+                        except ValueError:
+                            clean_emp_code = emp_code
+                            
                         results.append({
-                            'کد پرسنلی': int(float(emp_code)), # تبدیل به عدد صحیح برای زیبایی
+                            'کد پرسنلی': clean_emp_code,
                             'نام و نام خانوادگی': emp_name,
                             'شروع استعلاجی': f"{start_date['روز']} {start_date['تاریخ']}",
                             'پایان استعلاجی': f"{end_date['روز']} {end_date['تاریخ']}",
                             'تعداد روزهای استعلاجی': len(valid_sick_leaves)
                         })
                 
-                # نمایش خروجی به شکل کارتی و زیبا
                 if results:
                     for res in results:
                         with st.container():
