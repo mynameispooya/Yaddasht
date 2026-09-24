@@ -8,22 +8,34 @@ uploaded_file = st.file_uploader("فایل اکسل تردد را آپلود ک�
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
 
-    # مرحله 1: پاکسازی ستون‌ها
-    if "اطلاعات تردد" in df.columns:
-        df = df.drop(columns=["اطلاعات تردد"], errors="ignore")
+    # پاکسازی نام ستون‌ها (حذف فاصله و نیم‌فاصله)
+    df.columns = df.columns.str.strip()
+
+    # تغییر نام ستون‌ها به انگلیسی برای راحتی
+    rename_map = {
+        "کدپرسنلی": "personnel_id",
+        "نام و نام خانوادگی": "name",
+        "تاریخ": "date",
+        "روز": "day",
+        "ورود": "entry",
+        "خروج": "exit",
+        "وضعیت": "status",
+        "شروع شیفت": "shift_start",
+        "پایان شیفت": "shift_end"
+    }
+    df = df.rename(columns=rename_map)
 
     # مرحله 2: گروه‌بندی بر اساس کد پرسنلی و تاریخ
     tardod_naqs = []
     tardod_mashkook = []
 
-    grouped = df.groupby(["کدپرسنلی", "تاریخ"])
+    grouped = df.groupby(["personnel_id", "date"])
     for (code, date), group in grouped:
-        name = group["نام و نام خانوادگی"].iloc[0]
-        day = group["روز"].iloc[0]
+        name = group["name"].iloc[0]
+        day = group["day"].iloc[0]
 
-        # شمارش ورود و خروج
-        vorood = group["ورود"].dropna().tolist()
-        khorooj = group["خروج"].dropna().tolist()
+        vorood = group["entry"].dropna().tolist()
+        khorooj = group["exit"].dropna().tolist()
 
         # تردد ناقص
         if len(vorood) == 0 or len(khorooj) == 0:
@@ -37,9 +49,8 @@ if uploaded_file:
     df_naqs = pd.DataFrame(tardod_naqs, columns=["کدپرسنلی","نام و نام خانوادگی","تاریخ","روز","ورود","خروج"])
     df_mashkook = pd.DataFrame(tardod_mashkook, columns=["کدپرسنلی","نام و نام خانوادگی","تاریخ","روز","ورود","خروج"])
 
-    # ذخیره فایل‌ها
-    df_naqs.to_excel("tardod_naqs.xlsx", index=False)
-    df_mashkook.to_excel("tardod_mashkook.xlsx", index=False)
+    # امکان دانلود مستقیم از Streamlit
+    st.download_button("دانلود فایل تردد ناقص", df_naqs.to_csv(index=False).encode("utf-8"), "tardod_naqs.csv")
+    st.download_button("دانلود فایل تردد مشکوک", df_mashkook.to_csv(index=False).encode("utf-8"), "tardod_mashkook.csv")
 
-    st.success("پاکسازی و پردازش انجام شد ✅")
-    st.write("📂 فایل‌های خروجی تولید شدند: tardod_naqs.xlsx و tardod_mashkook.xlsx")
+    st.success("✅ پردازش کامل شد. حالا می‌توانید فایل‌ها را دانلود کنید.")
