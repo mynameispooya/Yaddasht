@@ -109,9 +109,9 @@ if uploaded_file:
             return ''
 
         def style_df(styler):
-            # اعمال رنگ برای ستون‌های مختلف
+            # اعمال رنگ برای ستون‌های مختلف (از متد map به جای applymap استفاده شده است)[span_0](start_span)[span_0](end_span)
             for col, color in valid_targets.items():
-                styler.applymap(lambda v, c=color: highlight_target_cells(v, c), subset=[col])
+                styler.map(lambda v, c=color: highlight_target_cells(v, c), subset=[col])
                 
             # متمایز کردن ردیف مجموع نهایی در انتهای جدول
             def highlight_summary(s):
