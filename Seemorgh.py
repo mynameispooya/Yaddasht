@@ -5,13 +5,12 @@ import io
 # تنظیمات صفحه
 st.set_page_config(page_title="ویرایشگر هوشمند اکسل", layout="wide")
 st.title("فیلتر و ویرایش داده‌های اکسل")
-st.markdown("فایل اکسل خود (مثلاً **سیمرغ.xlsx**) را آپلود کنید، ستون‌ها را انتخاب کرده و مقادیر را مستقیماً در جدول ویرایش کنید.")
+st.markdown("فایل اکسل خود را آپلود کنید، ستون مبنای فیلتر و هر تعداد ستون دیگر که نیاز دارید را انتخاب کرده و مقادیر را ویرایش کنید.")
 
 # آپلود فایل
 uploaded_file = st.file_uploader("فایل اکسل خود را اینجا آپلود کنید (xlsx, xls)", type=['xlsx', 'xls'])
 
 if uploaded_file is not None:
-    # برای جلوگیری از ریست شدن داده‌ها در هر بار کلیک، دیتای اصلی را در Session State ذخیره می‌کنیم
     if 'main_df' not in st.session_state or st.session_state.get('uploaded_filename') != uploaded_file.name:
         st.session_state.main_df = pd.read_excel(uploaded_file)
         st.session_state.uploaded_filename = uploaded_file.name
@@ -20,51 +19,52 @@ if uploaded_file is not None:
     
     st.divider()
     
-    # انتخاب دو ستون
     st.subheader("۱. انتخاب ستون‌ها")
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 2])
     
     with col1:
-        # ستون اول برای فیلتر کردن
-        filter_col = st.selectbox("ستون اول (مبنای فیلتر - مثلاً مقطع تحصیلی) را انتخاب کنید:", df.columns)
+        # ستون اول فقط برای فیلتر کردن (یک انتخاب)
+        filter_col = st.selectbox("ستون مبنای فیلتر (مثلاً مقطع تحصیلی):", df.columns)
     
     with col2:
-        # ستون دوم برای نمایش متناظر
-        target_col = st.selectbox("ستون دوم (نمایش متناظر - مثلاً رشته تحصیلی) را انتخاب کنید:", df.columns)
+        # امکان انتخاب چندگانه برای ستون‌های نمایشی
+        target_cols = st.multiselect(
+            "سایر ستون‌ها برای نمایش و ویرایش (می‌توانید هر تعداد که می‌خواهید انتخاب کنید):", 
+            options=df.columns
+        )
 
-    if filter_col and target_col:
+    # بررسی اینکه کاربر حتماً ستون‌های نمایشی را انتخاب کرده باشد
+    if filter_col and len(target_cols) > 0:
         st.divider()
         st.subheader("۲. فیلتر کردن داده‌ها")
         
-        # استخراج مقادیر یکتا از ستون اول (حذف مقادیر خالی)
         unique_values = df[filter_col].dropna().unique()
-        
-        # انتخاب یک مقدار برای فیلتر
-        selected_val = st.selectbox(f"یک مقدار یکتا از ستون '{filter_col}' را انتخاب کنید:", unique_values)
+        selected_val = st.selectbox(f"یک مقدار از ستون '{filter_col}' انتخاب کنید:", unique_values)
         
         if selected_val:
-            # فیلتر کردن دیتافریم بر اساس مقدار انتخاب شده
-            # فقط ستون‌های انتخاب شده را برای ویرایش نمایش می‌دهیم تا محیط شلوغ نشود
-            filtered_df = df[df[filter_col] == selected_val][[filter_col, target_col]]
+            # ترکیب ستون فیلتر و ستون‌های انتخابی (جلوگیری از تکرار نام ستون در لیست)
+            cols_to_show = [filter_col]
+            for col in target_cols:
+                if col not in cols_to_show:
+                    cols_to_show.append(col)
+            
+            # فیلتر کردن دیتافریم و نمایش ستون‌های انتخابی
+            filtered_df = df[df[filter_col] == selected_val][cols_to_show]
             
             st.divider()
             st.subheader("۳. ویرایش مقادیر")
-            st.info("💡 روی هر سلولی که می‌خواهید کلیک کنید و مقدار آن را تغییر دهید.")
+            st.info("💡 روی هر سلولی که می‌خواهید کلیک کنید و مقدار آن را تغییر دهید. می‌توانید ستون‌های راهنما (مثل نام) را ببینید و فقط ستون هدف (مثل رشته) را ویرایش کنید.")
             
-            # نمایش جدول قابل ویرایش (تغییرات در متغیر edited_df ذخیره می‌شود)
             edited_df = st.data_editor(filtered_df, use_container_width=True)
             
-            # دکمه برای اعمال تغییرات در دیتای اصلی
             if st.button("ثبت تغییرات جدول بالا در فایل اصلی", type="primary"):
-                # تابع update بر اساس ایندکس ردیف‌ها، مقادیر تغییر یافته را روی دیتای اصلی اعمال می‌کند
                 st.session_state.main_df.update(edited_df)
-                st.success("✅ تغییرات با موفقیت در حافظه ذخیره شد! می‌توانید فیلتر را عوض کنید یا فایل نهایی را دانلود کنید.")
+                st.success("✅ تغییرات با موفقیت اعمال شد! می‌توانید فیلتر را عوض کنید یا خروجی بگیرید.")
                 st.balloons()
             
             st.divider()
             st.subheader("۴. دریافت خروجی")
             
-            # ساخت فایل اکسل خروجی در مموری
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 st.session_state.main_df.to_excel(writer, index=False, sheet_name='Sheet1')
@@ -76,3 +76,5 @@ if uploaded_file is not None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+    elif filter_col and len(target_cols) == 0:
+        st.warning("لطفاً از کادر بالا، حداقل یک ستون دیگر را برای نمایش انتخاب کنید.")
