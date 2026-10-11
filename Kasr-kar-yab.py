@@ -10,7 +10,7 @@ def normalize_code(text):
     persian_to_english = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
     arabic_to_english = str.maketrans('٠١٢٣٤٥٦٧٨٩', '0123456789')
     text = text.translate(persian_to_english).translate(arabic_to_english)
-    # حذف صفرهای پیشرو (مثلا 000100 با 100 یکی در نظر گرفته می‌شود)
+    # حذف صفرهای پیشرو
     text = text.lstrip('0')
     return text
 
@@ -37,50 +37,45 @@ with col2:
                 
                 header_row_idx = None
                 for idx, row in temp_df.iterrows():
-                    # اگر کلمه کسرکار چرخشی در ردیف بود، آن ردیف هدر است
                     row_str = row.astype(str).str.replace(' ', '')
                     if row_str.str.contains('کسرکارچرخشی').any():
                         header_row_idx = idx
                         break
                 
                 if header_row_idx is not None:
-                    # برگرداندن پوینتر فایل به ابتدا و خواندن دیتای اصلی از ردیف پیدا شده
                     uploaded_file.seek(0)
                     df = pd.read_excel(uploaded_file, header=header_row_idx + 1)
                     
                     # حذف ستون‌های خالی (Unnamed)
                     df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
                     
-                    # پیدا کردن نام دقیق ستون کد پرسنلی (ممکن است شامل کاراکترهای اضافی مانند \n باشد)
+                    # پیدا کردن نام دقیق ستون کد پرسنلی
                     emp_col = [col for col in df.columns if 'کد پرسنلی' in col][0]
                     
-                    # اعمال نرمال‌سازی روی کدهای پرسنلی فایل اکسل
                     df['کد_پرسنلی_جستجو'] = df[emp_col].apply(normalize_code)
-                    
-                    # پردازش کدهای ورودی کاربر
                     input_codes = [normalize_code(code) for code in personnel_codes_input.split('\n') if code.strip()]
                     
-                    # فیلتر کردن دیتافریم بر اساس کدهای وارد شده
                     filtered_df = df[df['کد_پرسنلی_جستجو'].isin(input_codes)]
                     
                     if not filtered_df.empty:
-                        # پیدا کردن دقیق ستون‌های مورد نیاز برای نمایش
-                        cols_to_show = []
-                        target_cols = [emp_col, 'نام', 'نام خانوادگی', 'عنوان ماه', 'تاریخ', 'کسرکار ماهانه', 'کسرکار چرخشی']
+                        # پیدا کردن دقیق ستون‌ها با بررسی تطابق کامل برای جلوگیری از تکرار
+                        cols_to_show = [emp_col]
+                        target_cols = ['نام', 'نام خانوادگی', 'عنوان ماه', 'تاریخ', 'کسرکار ماهانه', 'کسرکار چرخشی']
                         
                         for target in target_cols:
-                            # جستجوی ستون بدون حساسیت به فاصله
-                            matches = [c for c in df.columns if target.replace(' ', '') in c.replace(' ', '')]
-                            if matches:
-                                cols_to_show.append(matches[0])
+                            target_clean = target.replace(' ', '')
+                            for c in df.columns:
+                                c_clean = str(c).replace(' ', '').replace('\n', '')
+                                # اگر نام ستون دقیقاً با چیزی که می‌خواهیم برابر بود آن را اضافه کن
+                                if c_clean == target_clean and c not in cols_to_show:
+                                    cols_to_show.append(c)
+                                    break
                         
-                        # آماده‌سازی دیتافریم نهایی (بدون ستون جستجوی کمکی)
                         final_df = filtered_df[cols_to_show]
                         
                         st.success(f"✅ تعداد {len(final_df)} رکورد یافت شد.")
                         st.dataframe(final_df, use_container_width=True)
                         
-                        # ساخت فایل اکسل خروجی در مموری
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
                             final_df.to_excel(writer, index=False, sheet_name='نتیجه کسر کار')
