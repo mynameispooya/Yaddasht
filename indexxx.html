@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تطبیق ترددهای ناقص با گزارش غیبت</title>
+<style>
+  :root{
+    --bg:#f3f5f9; --card:#fff; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb;
+    --brand:#2563eb; --brand-d:#1d4ed8; --ok:#15803d; --warn:#b45309; --bad:#b91c1c;
+    --hl:#fff3a3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:Vazirmatn,"Segoe UI",Tahoma,"Noto Sans Arabic",sans-serif;line-height:1.7}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px 16px 60px}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px;font-size:.95rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;
+        box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:22px 14px;text-align:center;cursor:pointer;
+        transition:.15s;background:#fafbfd;min-height:150px;display:flex;flex-direction:column;justify-content:center;gap:4px}
+  .drop:hover,.drop.over{border-color:var(--brand);background:#eff6ff}
+  .drop.has{border-style:solid;border-color:var(--ok);background:#f0fdf4}
+  .drop .t{font-weight:700}
+  .drop .h{color:var(--muted);font-size:.85rem}
+  .drop .f{color:var(--ok);font-size:.9rem;word-break:break-all}
+  .drop input{display:none}
+  button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:10px 18px;background:var(--brand);color:#fff;font-weight:700}
+  button:hover{background:var(--brand-d)}
+  button:disabled{background:#cbd5e1;cursor:not-allowed}
+  button.sec{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  button.sec:hover{background:#eff6ff}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .msg{padding:10px 14px;border-radius:10px;margin-top:12px;font-size:.92rem;white-space:pre-line}
+  .msg.err{background:#fef2f2;color:var(--bad);border:1px solid #fecaca}
+  .msg.info{background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+  .msg.warn{background:#fffbeb;color:var(--warn);border:1px solid #fde68a}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .stat{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fafbfd}
+  .stat b{display:block;font-size:1.5rem}
+  .stat span{color:var(--muted);font-size:.85rem}
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:12px;flex-wrap:wrap}
+  .tab{background:none;color:var(--muted);border-radius:8px 8px 0 0;padding:8px 14px;font-weight:600}
+  .tab:hover{background:#f1f5f9}
+  .tab.on{color:var(--brand);border-bottom:3px solid var(--brand);background:none}
+  .pane{display:none}.pane.on{display:block}
+  .tools{display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
+  input[type=search]{font:inherit;padding:8px 12px;border:1px solid var(--line);border-radius:10px;min-width:240px}
+  .tw{max-height:480px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:.92rem}
+  th,td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{position:sticky;top:0;background:#f1f5f9;z-index:1}
+  td.num{font-variant-numeric:tabular-nums}
+  tr.m td{background:var(--hl)}
+  .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.78rem}
+  .tag.ok{background:#dcfce7;color:var(--ok)}
+  .tag.no{background:#fee2e2;color:var(--bad)}
+  .tag.wa{background:#fef3c7;color:var(--warn)}
+  .hidden{display:none}
+  .note{color:var(--muted);font-size:.85rem;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>تطبیق ترددهای ناقص با گزارش غیبت</h1>
+  <p class="sub">دو فایل اکسل را بارگذاری کنید؛ همه‌چیز روی همین رایانه پردازش می‌شود و هیچ داده‌ای به اینترنت ارسال نمی‌شود.</p>
+
+  <div class="card">
+    <div class="grid2">
+      <label class="drop" id="dropAbs">
+        <span class="t">۱) فایل غیبت</span>
+        <span class="h">گزارش غیبت (ساختار چندسطحی) — فایل را بکشید و رها کنید یا کلیک کنید</span>
+        <span class="f" id="nameAbs"></span>
+        <input type="file" id="fileAbs" accept=".xlsx">
+      </label>
+      <label class="drop" id="dropInc">
+        <span class="t">۲) فایل لیست تردد ناقص</span>
+        <span class="h">فقط ستون‌های «عنوان» و «پیغام» استفاده می‌شوند</span>
+        <span class="f" id="nameInc"></span>
+        <input type="file" id="fileInc" accept=".xlsx">
+      </label>
+    </div>
+    <div class="actions">
+      <button id="run" disabled>شروع پردازش</button>
+      <span id="busy" class="hidden">در حال پردازش…</span>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="card">
+      <div class="stats" id="stats"></div>
+      <div class="actions">
+        <button id="dlHl">دانلود غیبت (ردیف‌های هایلایت‌شده)</button>
+        <button id="dlClean">دانلود غیبت خالص (بدون ترددهای ناقص)</button>
+        <button id="dlRank" class="sec">دانلود خلاصه غیبت هر نفر</button>
+        <button id="dlInc" class="sec">دانلود ترددهای ناقص استخراج‌شده</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="tabs">
+        <button class="tab on" data-p="pRank">خلاصه غیبت (بیشترین به کمترین)</button>
+        <button class="tab" data-p="pInc">ترددهای ناقص استخراج‌شده</button>
+        <button class="tab" data-p="pWarn">موارد نیازمند بررسی</button>
+      </div>
+
+      <div class="pane on" id="pRank">
+        <div class="tools"><input type="search" id="q" placeholder="جست‌وجوی نام یا کد پرسنلی…"></div>
+        <div class="tw"><table><thead><tr><th>#</th><th>کد پرسنلی</th><th>نام و نام خانوادگی</th><th>تعداد غیبت</th></tr></thead><tbody id="tbRank"></tbody></table></div>
+      </div>
+
+      <div class="pane" id="pInc">
+        <div class="tw"><table><thead><tr><th>#</th><th>عنوان (نام و نام خانوادگی)</th><th>کد پرسنلی</th><th>تاریخ</th><th>وضعیت تطبیق</th></tr></thead><tbody id="tbInc"></tbody></table></div>
+      </div>
+
+      <div class="pane" id="pWarn"><div id="warnBox"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- کتابخانه باید در کنار همین فایل با همین نام قرار بگیرد (بدون نیاز به اینترنت) -->
+<script src="exceljs.min.js"></script>
+
+<script>
+/*CORE-START*/
+const Core = (() => {
+  const FA = '۰۱۲۳۴۵۶۷۸۹', AR = '٠١٢٣٤٥٦٧٨٩';
+  const normDigits = s => String(s == null ? '' : s)
+      .replace(/[۰-۹]/g, d => FA.indexOf(d)).replace(/[٠-٩]/g, d => AR.indexOf(d));
+  const normText = s => normDigits(s)
+      .replace(/[\u200c\u200e\u200f\u202a-\u202e\u2066-\u2069\u00a0]/g, ' ')
+      .replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/\s+/g, ' ').trim();
+  const cleanName = s => String(s == null ? '' : s).replace(/[\u200e\u200f\u202a-\u202e]/g, '')
+      .replace(/\s+/g, ' ').trim();
+  const codeKey = c => normDigits(c).replace(/\D/g, '').replace(/^0+/, '');
+  const clone = o => JSON.parse(JSON.stringify(o || {}));
+
+  function cellText(v) {
+    if (v == null) return '';
+    if (v instanceof Date) return v.toISOString();
+    if (typeof v === 'object') {
+      if (v.richText) return v.richText.map(t => t.text).join('');
+      if ('result' in v) return cellText(v.result);
+      if (v.text !== undefined) return cellText(v.text);
+      return '';
+    }
+    return String(v);
+  }
+
+  // سلول فرعی در یک ادغام (مقدار آن در ExcelJS همان مقدار سلول اصلی است)
+  const isSlave = cell => !!(cell.isMerged && cell.master && cell.master.address !== cell.address);
+
+  const colNum = L => L.split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
+  function parseMerges(ws) {
+    return (ws.model.merges || []).map(s => {
+      const m = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(s);
+      return m ? { top: +m[2], left: colNum(m[1]), bottom: +m[4], right: colNum(m[3]) } : null;
+    }).filter(Boolean);
+  }
+
+  function normDate(txt) {
+    const m = /(\d{4})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/.exec(normText(txt));
+    if (!m) return '';
+    return m[1] + '/' + m[2].padStart(2, '0') + '/' + m[3].padStart(2, '0');
+  }
+
+  /* ---------- فایل تردد ناقص ---------- */
+  function parseIncomplete(wb) {
+    for (const ws of wb.worksheets) {
+      let hr = 0, cTitle = 0, cMsg = 0;
+      const maxR = Math.min(ws.rowCount, 15);
+      for (let r = 1; r <= maxR && !hr; r++) {
+        let t = 0, m = 0;
+        ws.getRow(r).eachCell({ includeEmpty: false }, (cell, c) => {
+          const x = normText(cellText(cell.value));
+          if (x === 'عنوان') t = c; else if (x === 'پیغام' || x === 'پیام') m = c;
+        });
+        if (t && m) { hr = r; cTitle = t; cMsg = m; }
+      }
+      if (!hr) continue;
+
+      const rows = [], warnings = [];
+      for (let r = hr + 1; r <= ws.rowCount; r++) {
+        const title = cellText(ws.getCell(r, cTitle).value);
+        const msg = cellText(ws.getCell(r, cMsg).value);
+        if (!normText(title) && !normText(msg)) continue;
+
+        // «نام - کد پرسنلی 110199»  ← نام و کد را جدا می‌کنیم
+        const t = normDigits(title).replace(/[\u200e\u200f\u202a-\u202e]/g, '');
+        const dash = Math.max(t.lastIndexOf('-'), t.lastIndexOf('–'), t.lastIndexOf('—'));
+        let name = '', code = '';
+        if (dash >= 0) {
+          name = t.slice(0, dash);
+          const mm = /(\d+)/.exec(t.slice(dash + 1));
+          code = mm ? mm[1] : '';
+        } else {
+          const mm = /^(.*?)\s*(?:کد\s*پرسنلی)?\s*[:：]?\s*(\d+)\s*$/.exec(t);
+          if (mm) { name = mm[1]; code = mm[2]; }
+        }
+        name = cleanName(name);
+        if (!code) { warnings.push(`ردیف ${r} فایل تردد ناقص: کد پرسنلی در ستون «عنوان» پیدا نشد («${cleanName(title)}»).`); continue; }
+
+        // چند تاریخ با تگ <br> (یا <br/> ، </br> ، <\br>) از هم جدا شده‌اند
+        const parts = String(msg).split(/<\s*[\\\/]?\s*br\s*[\\\/]?\s*>|\r?\n/i);
+        let found = 0;
+        for (const p of parts) {
+          const re = /(\d{4})\s*[\/\-.]\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/g;
+          const txt = normText(p);
+          let mt;
+          while ((mt = re.exec(txt))) {
+            rows.push({ srcRow: r, name, code, date: mt[1] + '/' + mt[2].padStart(2, '0') + '/' + mt[3].padStart(2, '0') });
+            found++;
+          }
+        }
+        if (!found) warnings.push(`ردیف ${r} فایل تردد ناقص: تاریخی در ستون «پیغام» پیدا نشد.`);
+      }
+      return { sheetName: ws.name, rows, warnings };
+    }
+    return null;
+  }
+
+  /* ---------- فایل غیبت (چندسطحی) ---------- */
+  function parseAbsence(wb) {
+    for (const ws of wb.worksheets) {
+      // ۱) پیدا کردن سطر عنوان‌ها (سطری که «کد پرسنلی» در آن است)
+      let hr = 0;
+      const maxR = Math.min(ws.rowCount, 80);
+      for (let r = 1; r <= maxR && !hr; r++) {
+        ws.getRow(r).eachCell({ includeEmpty: false }, cell => {
+          if (isSlave(cell)) return;
+          if (normText(cellText(cell.value)).includes('کد پرسنلی')) hr = r;
+        });
+      }
+      if (!hr) continue;
+
+      // ۲) ستون‌ها را از روی «نام عنوان» پیدا می‌کنیم، نه شماره ستون (چندسطحی بودن مشکلی ایجاد نمی‌کند)
+      const cols = {};
+      const rule = {
+        code: x => x.includes('کد پرسنلی'),
+        date: x => x === 'تاریخ',
+        daily: x => x.includes('غیبت روزانه'),
+        last: x => x === 'نام خانوادگی',
+        first: x => x === 'نام'
+      };
+      for (let rr = hr; rr <= hr + 2; rr++) {
+        ws.getRow(rr).eachCell({ includeEmpty: false }, (cell, c) => {
+          if (isSlave(cell)) return;
+          const x = normText(cellText(cell.value));
+          for (const k in rule) if (!cols[k] && rule[k](x)) cols[k] = c;
+        });
+      }
+      if (!cols.code || !cols.date) continue;
+
+      // کمینه/بیشینه ستون جدول (برای هایلایت)
+      let minC = 999, maxC = 0;
+      for (let rr = hr; rr <= hr + 1; rr++) ws.getRow(rr).eachCell({ includeEmpty: false }, (cell, c) => {
+        if (isSlave(cell)) return; minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+      });
+      const merges = parseMerges(ws);
+      const spanCols = [cols.date, cols.daily, cols.last, cols.first].filter(Boolean);
+      maxC = Math.max(maxC, ...merges.filter(m => m.top >= hr).map(m => m.right));
+
+      // ۳) هر «رکورد غیبت» = سطر دارای تاریخ (با احتساب سطرهای ادغام‌شده‌ی عمودی)
+      const records = [], warnings = [];
+      let lastCode = '', lastName = '';
+      for (let r = hr + 1; r <= ws.rowCount; r++) {
+        const dc = ws.getCell(r, cols.date);
+        if (isSlave(dc)) continue;                       // ادامه‌ی رکورد بالا (سلول ادغام‌شده)
+        const date = normDate(cellText(dc.value));
+        if (!date) continue;
+
+        let bottom = r;
+        for (const m of merges) if (m.top === r && spanCols.some(c => c >= m.left && c <= m.right)) bottom = Math.max(bottom, m.bottom);
+
+        const last = cols.last ? cleanName(cellText(ws.getCell(r, cols.last).value)) : '';
+        const first = cols.first ? cleanName(cellText(ws.getCell(r, cols.first).value)) : '';
+        const name = (first + ' ' + last).trim();
+        let code = normDigits(cellText(ws.getCell(r, cols.code).value)).replace(/\s+/g, '');
+        if (code) { lastCode = code; lastName = name; }
+        else if (lastCode && name === lastName) code = lastCode;       // کد فقط در ردیف اول هر نفر نوشته شده
+        else warnings.push(`ردیف ${r} فایل غیبت: کد پرسنلی برای «${name}» پیدا نشد.`);
+
+        let daily = 1;
+        if (cols.daily) {
+          const v = parseFloat(normDigits(cellText(ws.getCell(r, cols.daily).value)).replace(',', '.'));
+          if (!isNaN(v)) daily = v;
+        }
+        records.push({ top: r, bottom, code, date, name, daily, matched: false });
+      }
+      return { sheetName: ws.name, headerRow: hr, cols, minC, maxC, merges, records, warnings };
+    }
+    return null;
+  }
+
+  /* ---------- تطبیق و شمارش ---------- */
+  function analyze(inc, abs) {
+    const k = (c, d) => codeKey(c) + '|' + d;
+    const incKeys = new Set(inc.rows.map(r => k(r.code, r.date)));
+    const absKeys = new Set(abs.records.map(r => k(r.code, r.date)));
+    const absCodes = new Set(abs.records.map(r => codeKey(r.code)));
+    abs.records.forEach(r => { r.matched = incKeys.has(k(r.code, r.date)); });
+    inc.rows.forEach(r => {
+      r.status = absKeys.has(k(r.code, r.date)) ? 'matched'
+               : (absCodes.has(codeKey(r.code)) ? 'nodate' : 'nocode');
+    });
+    const g = new Map();
+    abs.records.filter(r => !r.matched).forEach(r => {
+      const key = codeKey(r.code) || ('name:' + r.name);
+      let o = g.get(key);
+      if (!o) { o = { code: r.code, name: r.name || 'نامشخص', count: 0 }; g.set(key, o); }
+      o.count += r.daily;
+    });
+    const ranking = [...g.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'fa'));
+    const matchedRecords = abs.records.filter(r => r.matched).length;
+    return {
+      ranking,
+      stats: {
+        absTotal: abs.records.length,
+        incTotal: inc.rows.length,
+        incMatched: inc.rows.filter(r => r.status === 'matched').length,
+        removedRecords: matchedRecords,
+        remaining: abs.records.length - matchedRecords,
+        people: ranking.length
+      }
+    };
+  }
+
+  /* ---------- ساخت فایل‌های خروجی ---------- */
+  const YELLOW = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+
+  async function loadWb(buf) { const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf); return wb; }
+
+  async function buildHighlighted(buf, abs) {
+    const wb = await loadWb(buf);
+    const ws = wb.getWorksheet(abs.sheetName);
+    abs.records.filter(r => r.matched).forEach(rec => {
+      for (let r = rec.top; r <= rec.bottom; r++)
+        for (let c = abs.minC; c <= abs.maxC; c++) ws.getCell(r, c).fill = YELLOW;
+    });
+    return wb.xlsx.writeBuffer();
+  }
+
+  // حذف ردیف‌ها همراه با بازسازی صحیح سلول‌های ادغام‌شده
+  async function buildClean(buf, abs) {
+    const wb = await loadWb(buf);
+    const ws = wb.getWorksheet(abs.sheetName);
+    const remove = new Set();
+    abs.records.filter(r => r.matched).forEach(rec => { for (let r = rec.top; r <= rec.bottom; r++) remove.add(r); });
+
+    const ws2 = wb.addWorksheet('__tmp__', {
+      views: clone(ws.views), properties: clone(ws.properties), pageSetup: clone(ws.pageSetup)
+    });
+    const maxR = ws.rowCount, maxC = ws.columnCount;
+    for (let c = 1; c <= maxC; c++) {
+      const a = ws.getColumn(c), b = ws2.getColumn(c);
+      if (a.width) b.width = a.width;
+      if (a.hidden) b.hidden = true;
+    }
+    const map = new Map(); let nr = 0;
+    for (let r = 1; r <= maxR; r++) {
+      if (remove.has(r)) continue;
+      nr++; map.set(r, nr);
+      const src = ws.getRow(r), dst = ws2.getRow(nr);
+      if (src.height) dst.height = src.height;
+      src.eachCell({ includeEmpty: true }, (cell, c) => {
+        const d = dst.getCell(c);
+        if (!isSlave(cell)) d.value = cell.value;
+        d.style = clone(cell.style);
+      });
+    }
+    for (const m of abs.merges) {
+      const kept = [];
+      for (let r = m.top; r <= m.bottom; r++) if (!remove.has(r)) kept.push(r);
+      if (!kept.length) continue;
+      const nt = map.get(kept[0]), nb = map.get(kept[kept.length - 1]);
+      const master = ws.getCell(m.top, m.left);
+      const val = master.value, sty = clone(master.style);
+      if (nt === nb && m.left === m.right) {
+        const d = ws2.getCell(nt, m.left); d.value = val; d.style = sty; continue;
+      }
+      ws2.mergeCells(nt, m.left, nb, m.right);
+      const d = ws2.getCell(nt, m.left); d.value = val; d.style = sty;
+    }
+    const name = ws.name;
+    wb.removeWorksheet(ws.id);
+    ws2.name = name;
+    return wb.xlsx.writeBuffer();
+  }
+
+  async function buildSimple(sheetName, headers, rows, widths, textCols) {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(sheetName, { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
+    ws.addRow(headers);
+    rows.forEach(r => ws.addRow(r));
+    ws.columns.forEach((col, i) => { col.width = widths[i] || 18; });
+    ws.eachRow((row, rn) => row.eachCell(cell => {
+      cell.font = { name: 'Tahoma', size: 11, bold: rn === 1 };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      if (rn === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E2F3' } };
+    }));
+    (textCols || []).forEach(c => ws.getColumn(c).numFmt = '@');
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
+    return wb.xlsx.writeBuffer();
+  }
+
+  const statusLabel = s => s === 'matched' ? 'منطبق — از غیبت حذف شد'
+    : s === 'nodate' ? 'این تاریخ در فایل غیبت نبود' : 'این کد در فایل غیبت نبود';
+
+  const buildRanking = ranking => buildSimple('خلاصه غیبت',
+      ['کد پرسنلی', 'نام و نام خانوادگی', 'تعداد غیبت'],
+      ranking.map(r => [r.code, r.name, r.count]), [16, 32, 14], [1]);
+
+  const buildIncomplete = rows => buildSimple('ترددهای ناقص',
+      ['عنوان', 'کد پرسنلی', 'پیغام (تاریخ)', 'وضعیت تطبیق'],
+      rows.map(r => [r.name, r.code, r.date, statusLabel(r.status)]), [30, 16, 16, 34], [2, 3]);
+
+  return { parseIncomplete, parseAbsence, analyze, buildHighlighted, buildClean, buildRanking, buildIncomplete, statusLabel, normDigits };
+})();
+/*CORE-END*/
+</script>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const files = { abs: null, inc: null };
+  let out = null;
+
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const setMsg = (cls, text) => { $('status').innerHTML = text ? `<div class="msg ${cls}">${esc(text)}</div>` : ''; };
+
+  function bindDrop(key, dropId, inputId, nameId) {
+    const drop = $(dropId), inp = $(inputId);
+    const take = f => {
+      if (!f) return;
+      if (!/\.xlsx$/i.test(f.name)) { setMsg('err', 'فقط فایل با پسوند xlsx پشتیبانی می‌شود.'); return; }
+      files[key] = f; $(nameId).textContent = f.name; drop.classList.add('has');
+      $('run').disabled = !(files.abs && files.inc); setMsg('', '');
+    };
+    inp.addEventListener('change', () => take(inp.files[0]));
+    ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+    drop.addEventListener('drop', e => take(e.dataTransfer.files[0]));
+  }
+  bindDrop('abs', 'dropAbs', 'fileAbs', 'nameAbs');
+  bindDrop('inc', 'dropInc', 'fileInc', 'nameInc');
+
+  const readBuf = f => f.arrayBuffer();
+
+  async function tryParse(buf) {
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf);
+    const abs = Core.parseAbsence(wb);
+    if (abs) return { kind: 'abs', data: abs };
+    const inc = Core.parseIncomplete(wb);
+    if (inc) return { kind: 'inc', data: inc };
+    return null;
+  }
+
+  $('run').addEventListener('click', async () => {
+    $('run').disabled = true; $('busy').classList.remove('hidden'); setMsg('', ''); $('results').classList.add('hidden');
+    try {
+      let bufA = await readBuf(files.abs), bufI = await readBuf(files.inc);
+      let pA = await tryParse(bufA.slice(0)), pI = await tryParse(bufI.slice(0));
+      let swapped = false;
+      if (pA && pI && pA.kind === 'inc' && pI.kind === 'abs') { [pA, pI] = [pI, pA]; [bufA, bufI] = [bufI, bufA]; swapped = true; }
+      if (!pA || pA.kind !== 'abs') throw new Error('در فایل غیبت ستون «کارمند کد پرسنلی» و «تاریخ» پیدا نشد. مطمئن شوید فایل درست را انتخاب کرده‌اید.');
+      if (!pI || pI.kind !== 'inc') throw new Error('در فایل تردد ناقص ستون‌های «عنوان» و «پیغام» پیدا نشد.');
+      const abs = pA.data, inc = pI.data;
+      if (!abs.records.length) throw new Error('در فایل غیبت هیچ ردیف دارای تاریخ پیدا نشد.');
+      if (!inc.rows.length) throw new Error('در فایل تردد ناقص هیچ تاریخی پیدا نشد.');
+
+      const res = Core.analyze(inc, abs);
+      const [hl, clean, rank, incx] = await Promise.all([
+        Core.buildHighlighted(bufA, abs), Core.buildClean(bufA, abs),
+        Core.buildRanking(res.ranking), Core.buildIncomplete(inc.rows)
+      ]);
+      const base = (swapped ? files.inc : files.abs).name.replace(/\.xlsx$/i, '');
+      out = { hl, clean, rank, incx, base };
+      render(res, inc, abs);
+      if (swapped) setMsg('info', 'ترتیب دو فایل جابه‌جا انتخاب شده بود؛ به‌صورت خودکار تشخیص داده و اصلاح شد.');
+    } catch (e) {
+      console.error(e); setMsg('err', e.message || String(e));
+    } finally {
+      $('busy').classList.add('hidden'); $('run').disabled = false;
+    }
+  });
+
+  function render(res, inc, abs) {
+    const s = res.stats;
+    const cards = [
+      ['ردیف غیبت در فایل اصلی', s.absTotal], ['تاریخ‌های تردد ناقص', s.incTotal],
+      ['تردد ناقص منطبق با غیبت', s.incMatched], ['ردیف حذف‌شده از غیبت', s.removedRecords],
+      ['ردیف غیبت واقعی (باقی‌مانده)', s.remaining], ['تعداد افراد دارای غیبت', s.people]
+    ];
+    $('stats').innerHTML = cards.map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+
+    window.__rank = res.ranking; drawRank('');
+    $('tbInc').innerHTML = inc.rows.map((r, i) => `<tr class="${r.status === 'matched' ? 'm' : ''}"><td>${i + 1}</td><td>${esc(r.name)}</td><td class="num">${esc(r.code)}</td><td class="num">${r.date}</td>` +
+      `<td><span class="tag ${r.status === 'matched' ? 'ok' : (r.status === 'nodate' ? 'wa' : 'no')}">${Core.statusLabel(r.status)}</span></td></tr>`).join('');
+
+    const un = inc.rows.filter(r => r.status !== 'matched');
+    let w = '';
+    if (un.length) w += `<p>این ${un.length} تردد ناقص با هیچ ردیفی در فایل غیبت منطبق نشد (بنابراین چیزی از غیبت حذف نشده است):</p><ul>` +
+      un.map(r => `<li>${esc(r.name)} — ${esc(r.code)} — ${r.date} — <span class="tag ${r.status === 'nodate' ? 'wa' : 'no'}">${Core.statusLabel(r.status)}</span></li>`).join('') + '</ul>';
+    const all = [...inc.warnings, ...abs.warnings];
+    if (all.length) w += '<p>هشدارهای خواندن فایل‌ها:</p><ul>' + all.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>';
+    $('warnBox').innerHTML = w || '<p>موردی برای بررسی وجود ندارد ✔</p>';
+    $('results').classList.remove('hidden');
+  }
+
+  function drawRank(q) {
+    q = Core.normDigits(q).trim();
+    const list = window.__rank.filter(r => !q || r.name.includes(q) || Core.normDigits(r.code).includes(q));
+    $('tbRank').innerHTML = list.map((r, i) => `<tr><td>${i + 1}</td><td class="num">${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num"><b>${r.count}</b></td></tr>`).join('')
+      || '<tr><td colspan="4">موردی پیدا نشد</td></tr>';
+  }
+  $('q').addEventListener('input', e => drawRank(e.target.value));
+
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
+    document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === t.dataset.p));
+  }));
+
+  function download(buf, name) {
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  $('dlHl').onclick = () => out && download(out.hl, out.base + '_هایلایت.xlsx');
+  $('dlClean').onclick = () => out && download(out.clean, out.base + '_خالص.xlsx');
+  $('dlRank').onclick = () => out && download(out.rank, 'خلاصه_غیبت_هر_نفر.xlsx');
+  $('dlInc').onclick = () => out && download(out.incx, 'ترددهای_ناقص_استخراج_شده.xlsx');
+})();
+</script>
+</body>
+</html>
